@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sobamin Hotel - සම්පූර්ණ අවන්හල් පද්ධතිය</title>
+    <!-- App Icons -->
+    <link rel="icon" type="image/png" href="./icon.png">
+    <link rel="apple-touch-icon" href="./icon.png">
+    <!-- Premium Fonts and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Sinhala:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Leaflet Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: 'Inter', 'Noto Sans Sinhala', sans-serif; }
+    </style>
+</head>
+<body class="deep-dark-theme">
+
+    <!-- Firebase Loading Overlay -->
+    <div id="loader" style="position:fixed;inset:0;background:var(--bg-dark);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <i data-lucide="loader-2" style="color:var(--accent-cyan); width:48px;height:48px;animation:spin 1s linear infinite;"></i>
+        <style>@keyframes spin { 100% { transform:rotate(360deg); } }</style>
+        <p style="margin-top:20px;color:var(--text-secondary);font-weight:600;">දත්ත ගබඩාවට සම්බන්ධ වෙමින් පවතී...</p>
+    </div>
+    
+    <div id="app-container">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="logo">
+                <i data-lucide="chef-hat" class="logo-icon"></i>
+                <h2>Ju <span>pos</span></h2>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-tab="pos"><i data-lucide="layout-grid"></i> විකුණුම් (POS)</li>
+                <li data-tab="tables"><i data-lucide="armchair"></i> මේස (Tables)</li>
+                <li data-tab="kitchen"><i data-lucide="flame"></i> කුස්සිය (Kitchen)</li>
+                <li data-tab="dashboard"><i data-lucide="pie-chart"></i> දත්ත පුවරුව (Dashboard)</li>
+                <li data-tab="reports"><i data-lucide="bar-chart-2"></i> වාර්තා (Reports)</li>
+                <li data-tab="inventory"><i data-lucide="package"></i> ගබඩාව (Inventory)</li>
+                <li data-tab="staff"><i data-lucide="users"></i> සේවක මණ්ඩලය (Staff)</li>
+                <li data-tab="credits"><i data-lucide="book-open"></i> පාරිභෝගික ණය (Credits)</li>
+            </ul>
+            <div class="bottom-nav">
+                <div class="clock" id="live-clock">00:00:00</div>
+                <button class="action-btn" id="settings-btn" style="width:100%;justify-content:center;"><i data-lucide="settings"></i> සැකසුම් (Settings)</button>
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dynamic Content Injected Here via JS -->
+            <div id="view-container"></div>
+        </main>
+
+        <!-- Cart Sidebar -->
+        <aside class="cart-sidebar" id="cart-sidebar">
+            <div class="cart-header">
+                <h3><i data-lucide="shopping-cart"></i> දැනට ඇති ඇණවුම</h3>
+                <span class="badge" id="cart-count">0</span>
+            </div>
+            
+            <div class="order-type-selector">
+                <button class="type-btn active" data-type="dine-in">මෙහි කෑමට</button>
+                <button class="type-btn" data-type="takeaway">රැගෙන යාමට</button>
+                <button class="type-btn" data-type="delivery">බෙදා හැරීම</button>
+                <button class="type-btn" style="color:var(--accent-danger);" data-type="credit">ණයට</button>
+            </div>
+
+            <!-- Shown only when Dine-In -->
+            <select class="cart-table-select" id="cart-table-select">
+                <option value="">මේසයක් තෝරන්න...</option>
+            </select>
+
+            <div class="cart-items" id="cart-items" style="flex-grow:1; display:flex; flex-direction:column; gap:10px; overflow-y:auto;">
+                <!-- Items injected here -->
+                <div class="empty-cart">අයිතම කිසිවක් නැත</div>
+            </div>
+
+            <div style="display:flex; gap:0.5rem; margin-bottom:0.5rem; align-items:center;">
+                <input type="number" id="service-charge-val" placeholder="සේවා ගාස්තුව (Service Charge)" style="flex:1; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); padding:0.5rem; border-radius:6px;">
+                <select id="service-charge-type" style="background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); padding:0.5rem; border-radius:6px;">
+                    <option value="amount">රු.</option>
+                    <option value="percent">%</option>
+                </select>
+            </div>
+
+            <div style="display:flex; gap:0.5rem; margin-bottom:1rem; align-items:center;">
+                <input type="number" id="discount-val" placeholder="වට්ටම (Discount)" style="flex:1; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); padding:0.5rem; border-radius:6px;">
+                <select id="discount-type" style="background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); padding:0.5rem; border-radius:6px;">
+                    <option value="amount">රු.</option>
+                    <option value="percent">%</option>
+                </select>
+            </div>
+
+            <div class="cart-summary">
+                <div class="summary-row" style="color:var(--text-secondary);">
+                    <span>මුළු වටිනාකම (Subtotal)</span>
+                    <span id="cart-subtotal">රු. 0.00</span>
+                </div>
+                <!-- Dynamic service charge row hidden by default -->
+                <div class="summary-row" id="cart-service-row" style="display:none; color:var(--accent-warning);">
+                    <span>සේවා ගාස්තුව</span>
+                    <span id="cart-service-charge">+රු. 0.00</span>
+                </div>
+                <!-- Delivery charge row -->
+                <div class="summary-row" id="cart-delivery-row" style="display:none; color:var(--accent-cyan);">
+                    <span id="cart-delivery-label">බෙදා හැරීම් ගාස්තුව</span>
+                    <span id="cart-delivery-charge">+රු. 0.00</span>
+                </div>
+                <!-- Dynamic discount row hidden by default -->
+                <div class="summary-row" id="cart-discount-row" style="display:none; color:var(--accent-success);">
+                    <span>වට්ටම</span>
+                    <span id="cart-discount">-රු. 0.00</span>
+                </div>
+                <div class="summary-row total">
+                    <span>මුළු මුදල</span>
+                    <span id="cart-total" class="glow-text">රු. 0.00</span>
+                </div>
+                <button class="neon-btn" id="checkout-btn"><i data-lucide="check-circle"></i> ඇණවුම යවන්න</button>
+            </div>
+        </aside>
+    </div>
+
+    <!-- === MODALS === -->
+
+    <!-- Modifier Selection Modal -->
+    <div class="modal-overlay" id="add-on-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-item-name">අමතර දේවල් තෝරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body" id="modal-addons">
+                <!-- Add-on radiogroup injected here -->
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="add-to-cart-modal-btn">තහවුරු කරන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receipt Print Modal -->
+    <div class="modal-overlay" id="receipt-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>ඇණවුම සාර්ථකව යවන ලදී</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body" style="background:#fff; color:#000; padding:0; display:flex; justify-content:center;">
+                <!-- Actual Print Div -->
+                <div id="receipt-content">
+                    <div class="receipt-header">
+                        <h2>Ju pos</h2>
+                        <p id="receipt-date"></p>
+                        <p>Order #<span id="receipt-id"></span> | <span id="receipt-type"></span></p>
+                        <p id="receipt-table-info" style="display:none;"></p>
+                    </div>
+                    <div id="receipt-items"></div>
+                    <div class="receipt-totals">
+                        <div class="receipt-item"><span>මුළු වටිනාකම</span><span id="r-subtotal"></span></div>
+                        <div class="receipt-item"><span>සේවා ගාස්තුව</span><span id="r-tax"></span></div>
+                        <div class="receipt-item" style="font-weight:bold; font-size:1.1rem; margin-top:10px;"><span>මුළු මුදල</span><span id="r-total"></span></div>
+                    </div>
+                    <div style="text-align:center; margin-top:15px; font-size:0.8rem;">ස්තුතියි! නැවත එන්න!</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn success" id="btn-print"><i data-lucide="printer"></i> බිල්පත මුද්‍රණය</button>
+                <button class="neon-btn" style="margin-top:0;" id="btn-close-receipt">නව ඇණවුමක්</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory CRUD Modal -->
+    <div class="modal-overlay" id="inventory-modal">
+        <div class="modal-content lg">
+            <div class="modal-header">
+                <h3 id="inv-modal-title">නව අයිතමයක් එක් කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="inventory-form">
+                    <input type="hidden" id="inv-id">
+                    <div class="form-group">
+                        <label>අයිතමයේ නම *</label>
+                        <input type="text" id="inv-name" required placeholder="උදා: Mixed Fried Rice">
+                    </div>
+                    <div class="form-group">
+                        <label>කාණ්ඩය (Category)</label>
+                        <select id="inv-category">
+                            <option value="starters">කෙටි කෑම (Starters)</option>
+                            <option value="mains">ප්‍රධාන ආහාර (Mains)</option>
+                            <option value="desserts">අතුරුපස (Desserts)</option>
+                            <option value="beverages">බීම වර්ග (Beverages)</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; gap:1rem;">
+                        <div class="form-group" style="flex:1;">
+                            <label>ගත් මිල (Cost Price) - ලාභය බැලීමට</label>
+                            <input type="number" id="inv-cost" required min="0" step="0.5">
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>විකුණුම් මිල (Selling Price) *</label>
+                            <input type="number" id="inv-price" required min="0" step="0.5">
+                        </div>
+                    </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>ආරම්භක තොගය</label>
+                            <input type="number" id="inv-stock" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>අමතර වෙනස්කම් (Modifiers - කොමාවකින් වෙන් කරන්න)</label>
+                        <input type="text" id="inv-mods" placeholder="උදා: Regular, Large, Family">
+                    </div>
+                    <div class="form-group">
+                        <label>පින්තූරයේ URL එක</label>
+                        <input type="url" id="inv-image" placeholder="https://...">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="save-inventory-btn">අයිතමය සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>ප්‍රධාන සැකසුම් (Settings & Hardware)</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>මුදල් ඒකකය (Currency Symbol)</label>
+                    <input type="text" id="set-currency" value="රු.">
+                </div>
+                <input type="hidden" id="set-tax" value="0">
+                
+                <h4 style="margin-top:20px; color:var(--accent-success); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">📥 දත්ත (Data Management)</h4>
+                <div class="glass-card" style="padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-color:rgba(0,230,118,0.3);">
+                    <div>
+                        <strong style="display:block; color:var(--accent-success);">Backup Download කරන්න</strong>
+                        <small style="color:var(--text-secondary);">සියලු data JSON file ලෙස PC/Phone හි save කරන්න</small>
+                    </div>
+                    <button class="action-btn" style="border-color:var(--accent-success); color:var(--accent-success); white-space:nowrap;" onclick="db.downloadBackup()"><i data-lucide="download"></i> Backup</button>
+                </div>
+                <div class="glass-card" style="padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:10px; border-color:rgba(255,51,102,0.3);">
+                    <div>
+                        <strong style="display:block; color:var(--accent-danger);">සියලු Data Reset කරන්න</strong>
+                        <small style="color:var(--text-secondary);">Orders, Staff, Credits, Products ඔක්කොම delete වේ</small>
+                    </div>
+                    <button class="action-btn danger" style="white-space:nowrap;" onclick="App.fullDataReset()"><i data-lucide="trash-2"></i> Reset</button>
+                </div>
+
+                <h4 style="margin-top:20px; color:var(--accent-cyan); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">බාහිර උපාංග (Hardware Connections)</h4>
+                <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
+                    <div class="glass-card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong style="display:block;">බ්ලූටූත් ප්‍රින්ටරය (Bluetooth Thermal Printer)</strong>
+                            <small style="color:var(--text-secondary);">බිල්පත් මුද්‍රණය සඳහා</small>
+                        </div>
+                        <button class="action-btn" id="connect-bt-printer" style="border-color:var(--accent-cyan); color:var(--accent-cyan);" onclick="App.connectPrinter()"><i data-lucide="bluetooth"></i> සම්බන්ධ කරන්න</button>
+                    </div>
+
+                    <div class="glass-card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <strong style="display:block;">බාකෝඩ් ස්කෑනරය (Barcode Scanner - USB)</strong>
+                            <small style="color:var(--text-secondary);">භාණ්ඩ ස්කෑන් කිරීම සඳහා</small>
+                        </div>
+                        <button class="action-btn" id="connect-scanner" style="border-color:var(--accent-warning); color:var(--accent-warning);" onclick="App.connectScanner()"><i data-lucide="scan-line"></i> සක්‍රීය කරන්න</button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.saveSettings()">සැකසුම් සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error fixing for settings modal position -->
+    <!-- Staff Management Modal -->
+    <div class="modal-overlay" id="staff-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>නව සේවකයෙකු ලියාපදිංචි කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="staff-form">
+                    <div class="form-group">
+                        <label>නම (Name)</label>
+                        <input type="text" id="staff-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>තනතුර (Role)</label>
+                        <select id="staff-role">
+                            <option value="Manager">කළමනාකරු (Manager)</option>
+                            <option value="Cashier">අයකැමි (Cashier)</option>
+                            <option value="Chef">ප්‍රධාන කෝකියා (Chef)</option>
+                            <option value="Waiter">වේටර් (Waiter)</option>
+                            <option value="Delivery">බෙදා හරින්නා (Delivery Rider)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>දුරකථන අංකය</label>
+                        <input type="text" id="staff-contact">
+                    </div>
+                    <div class="form-group">
+                        <label>මූලික පඩිය (Basic Salary)</label>
+                        <input type="number" id="staff-salary" min="0" required placeholder="උදා: 45000">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="save-staff-btn">සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Staff Finance (Salary & Loan) Modal -->
+    <div class="modal-overlay" id="staff-finance-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>පඩි සහ ණය කළමනාකරණය</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="finance-staff-id">
+                <div class="glass-card" style="padding:15px; margin-bottom:15px; background:rgba(0,0,0,0.3);">
+                    <h4 id="finance-staff-name" style="color:var(--accent-cyan); margin-bottom:5px;"></h4>
+                    <p style="font-size:0.9rem; color:var(--text-secondary);">මූලික පඩිය: <span id="finance-basic-salary" style="color:var(--text-primary); font-weight:bold;">0</span></p>
+                    <p style="font-size:0.9rem; color:var(--text-secondary);">දැනට ඇති ණය (Loans/Advances): <span id="finance-current-loan" style="color:var(--accent-danger); font-weight:bold;">0</span></p>
+                </div>
+                
+                <div class="form-group">
+                    <label>ණය / අත්තිකාරම් ලබාදීම (Add Loan/Advance)</label>
+                    <input type="number" id="finance-add-loan" min="0" placeholder="රු.">
+                </div>
+                
+                <div style="border-top:1px dashed var(--border-glass); margin:15px 0;"></div>
+                
+                <div class="form-group">
+                    <label>පඩිය ගෙවීම් (Pay Salary) - අඩුකළ යුතු ණය/අත්තිකාරම් මුදල</label>
+                    <input type="number" id="finance-deduct-loan" min="0" placeholder="රු.">
+                </div>
+                <div class="form-group">
+                    <label>ගෙවන වෙනත් දීමනා (Bonus/Allowances)</label>
+                    <input type="number" id="finance-bonus" min="0" placeholder="රු.">
+                </div>
+                
+                <div class="glass-card" style="padding:10px; text-align:right; margin-top:10px; border-color:var(--accent-success);">
+                    <small style="color:var(--text-secondary); display:block;">අවසන් පඩිය (Net Salary)</small>
+                    <strong id="finance-net-salary" style="font-size:1.5rem; color:var(--accent-success);">රු. 0.00</strong>
+                </div>
+            </div>
+            <div class="modal-footer" style="flex-wrap: wrap;">
+                <button class="action-btn danger" id="btn-add-loan" style="flex:1; justify-content:center;">ණය/අත්ති. එක්කරන්න</button>
+                <button class="neon-btn" id="btn-pay-salary" style="flex:1; margin-top:0;">පඩි ගෙවන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense Modal -->
+    <div class="modal-overlay" id="expense-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>නව වියදමක් ඇතුලත් කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="expense-form">
+                    <div class="form-group">
+                        <label>වියදම් වර්ගය (Category)</label>
+                        <input type="text" id="exp-cat" placeholder="උදා: බඩුමිලදී ගැනීම්, විදුලි බිල" required>
+                    </div>
+                    <div class="form-group">
+                        <label>විස්තරය (Description)</label>
+                        <input type="text" id="exp-desc" placeholder="උදා: එළවළු සඳහා" required>
+                    </div>
+                    <div class="form-group">
+                        <label>මුදල (රු.)</label>
+                        <input type="number" id="exp-amount" min="1" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="save-exp-btn">සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container"></div>
+
+    <!-- Credit Checkout Modal -->
+    <div class="modal-overlay" id="credit-checkout-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>ණය බිල්පත යැවීම</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.9rem;">ණයට ලබාදෙන පාරිභෝගිකයාගේ විස්තර ඇතුලත් කරන්න.</p>
+                <div class="form-group">
+                    <label>පාරිභෝගිකයාගේ නම *</label>
+                    <input type="text" id="credit-cust-name" required placeholder="උදා: නිමල්">
+                </div>
+                <div class="form-group">
+                    <label>දුරකථන අංකය *</label>
+                    <input type="text" id="credit-cust-phone" required placeholder="උදා: 077XXXXXXX">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="confirm-credit-btn">බිල්පත යවන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credit Pay / Management Modal -->
+    <div class="modal-overlay" id="credit-pay-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>ණය කළමනාකරණය සහ ගෙවීම්</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pay-credit-id">
+                <div class="glass-card" style="padding:15px; margin-bottom:15px; background:rgba(0,0,0,0.3);">
+                    <h4 id="pay-credit-name" style="color:var(--accent-cyan); margin-bottom:5px;"></h4>
+                    <p style="font-size:0.9rem; color:var(--text-secondary);"><i data-lucide="phone" style="width:14px;height:14px;"></i> <span id="pay-credit-phone"></span></p>
+                    <div style="margin-top:10px; border-top:1px solid var(--border-glass); padding-top:10px;">
+                        <span style="font-size:0.9rem; color:var(--text-secondary);">දැනට ඇති මුළු ණය මුදල:</span>
+                        <h2 id="pay-credit-amount" style="color:var(--accent-danger); margin-top:5px;">0.00</h2>
+                    </div>
+                </div>
+                
+                <div class="form-group" id="credit-pay-section">
+                    <label style="color:var(--accent-success);">ගෙවීමට ලබාදෙන මුදල (Amount Paying)</label>
+                    <input type="number" id="pay-credit-input" min="0" placeholder="රු.">
+                </div>
+                
+                <div id="credit-paid-badge" style="display:none; text-align:center; padding:15px; background:rgba(0,230,118,0.1); border:1px solid var(--accent-success); border-radius:8px; color:var(--accent-success); font-weight:bold;">
+                    <i data-lucide="check-circle" style="width:24px;height:24px; margin-bottom:5px;"></i><br>
+                    සියලුම ණය ගෙවා අවසන් කර ඇත!
+                </div>
+            </div>
+            <div class="modal-footer" id="credit-pay-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="btn-submit-credit-pay">ගෙවීම තහවුරු කරන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ LOAN MANAGEMENT MODALS ══ -->
+
+    <!-- Loan Customer Modal -->
+    <div class="modal-overlay" id="loan-customer-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="loan-cust-modal-title">👤 ගනුදෙනුකරු එකතු කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="lc-id">
+                <div class="form-group">
+                    <label>සම්පූර්ණ නම *</label>
+                    <input type="text" id="lc-name" placeholder="ගනුදෙනුකරුගේ නම" required>
+                </div>
+                <div class="form-group">
+                    <label>දුරකථන අංකය</label>
+                    <input type="tel" id="lc-phone" placeholder="07X XXXXXXX">
+                </div>
+                <div class="form-group">
+                    <label>ලිපිනය</label>
+                    <input type="text" id="lc-address" placeholder="ලිපිනය">
+                </div>
+                <div class="form-group">
+                    <label>සටහන්</label>
+                    <textarea id="lc-notes" rows="2" style="width:100%; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); border-radius:8px; padding:10px; resize:vertical;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.loanSaveCustomer()">💾 සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Loan Modal -->
+    <div class="modal-overlay" id="loan-new-modal">
+        <div class="modal-content" style="max-width:560px;">
+            <div class="modal-header">
+                <h3>➕ නව ණය</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ගනුදෙනුකරු *</label>
+                    <select id="ln-cust"><option value="">— ගනුදෙනුකරු තෝරන්න —</option></select>
+                </div>
+                <input type="hidden" id="ln-id">
+                <div class="form-group">
+                    <label>විස්තරය / අයිතම</label>
+                    <input type="text" id="ln-desc" placeholder="උදා: Samsung A55, Charger...">
+                </div>
+                <div class="form-group">
+                    <label>ණය ගත් දේ (සවිස්තර)</label>
+                    <textarea id="ln-items" rows="2" style="width:100%; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); border-radius:8px; padding:10px; resize:vertical;"></textarea>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label>මුළු ණය මුදල *</label>
+                        <input type="number" id="ln-total" min="0" step="0.5" placeholder="0.00" oninput="App.loanPreviewInstallments()">
+                    </div>
+                    <div class="form-group">
+                        <label>ආරම්භක ගෙවීම</label>
+                        <input type="number" id="ln-init" min="0" step="0.5" value="0" placeholder="0.00">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>ගෙවිය යුතු දිනය (simple)</label>
+                    <input type="date" id="ln-due">
+                </div>
+                <hr style="border:none; border-top:1px solid var(--border-glass); margin:12px 0;">
+                <div style="font-size:0.85rem; font-weight:700; color:var(--accent-cyan); margin-bottom:10px;">📅 වාරික සැලැස්ම (ऐच्छिक)</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+                    <div class="form-group">
+                        <label>වාරික ගණන</label>
+                        <input type="number" id="ln-inst-count" min="0" max="60" value="0" placeholder="0 = නැත" oninput="App.loanPreviewInstallments()">
+                    </div>
+                    <div class="form-group">
+                        <label>සෑම (මාස)</label>
+                        <input type="number" id="ln-inst-every" min="1" max="12" value="1" oninput="App.loanPreviewInstallments()">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>පළමු වාරිකය දිනය</label>
+                    <input type="date" id="ln-inst-start" oninput="App.loanPreviewInstallments()">
+                </div>
+                <div id="ln-inst-preview" style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:8px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.loanSaveNewLoan()">💾 ණය සාදන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pay Loan Modal -->
+    <div class="modal-overlay" id="loan-pay-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>💰 ගෙවීම සටහන් කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="lp-loan-id">
+                <div class="glass-card" style="padding:12px; margin-bottom:15px; background:rgba(0,0,0,0.3);">
+                    <p id="lp-loan-info" style="font-size:0.9rem; color:var(--text-secondary);"></p>
+                </div>
+                <div class="form-group">
+                    <label style="color:var(--accent-success);">ගෙවීමේ මුදල *</label>
+                    <input type="number" id="lp-amt" min="0.01" step="0.5" placeholder="රු.">
+                </div>
+                <div class="form-group">
+                    <label>සටහන (ऐच्छिक)</label>
+                    <input type="text" id="lp-note" placeholder="Cash, Bank transfer...">
+                </div>
+                <div class="form-group">
+                    <label>දිනය</label>
+                    <input type="date" id="lp-date">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0; background:var(--accent-success);" onclick="App.loanRecordPayment()">✅ ගෙවීම සටහන් කරන්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══ DELIVERY MAP MODAL ══ -->
+    <div class="modal-overlay" id="delivery-map-modal">
+        <div class="modal-content lg" style="max-width:700px; max-height:90vh; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <h3><i data-lucide="map-pin"></i> බෙදා හැරීමේ ස්ථානය තෝරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body" style="padding:0; flex:1; display:flex; flex-direction:column; gap:0; overflow:hidden;">
+                <!-- Info bar -->
+                <div style="padding:10px 16px; background:rgba(0,0,0,0.5); border-bottom:1px solid var(--border-glass); font-size:0.82rem; color:var(--text-secondary);">
+                    <i data-lucide="info" style="width:13px;height:13px;"></i>
+                    මැප් එකේ ඕනෑම ස්ථානයක් <strong style="color:var(--accent-cyan);">click</strong> කරන්න | කිලෝමීටරයකට <strong style="color:var(--accent-warning);">රු. 200</strong>
+                </div>
+                <!-- Map -->
+                <div id="delivery-map" style="flex:1; min-height:370px; width:100%;"></div>
+                <!-- Result bar -->
+                <div id="delivery-info-bar" style="padding:12px 16px; background:rgba(0,0,0,0.6); border-top:1px solid var(--border-glass); display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div style="flex:2;">
+                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:2px;">📍 ස්ථානය</div>
+                            <div id="delivery-loc-name" style="font-weight:600; color:var(--text-primary); font-size:0.85rem;">—</div>
+                        </div>
+                        <div style="text-align:center; flex:1;">
+                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:2px;">📐 දුර</div>
+                            <div id="delivery-distance-text" style="font-weight:700; color:var(--accent-cyan); font-size:1rem;">0 km</div>
+                        </div>
+                        <div style="text-align:right; flex:1;">
+                            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:2px;">🛵 ගාස්තුව</div>
+                            <div id="delivery-fee-text" style="font-weight:700; color:var(--accent-warning); font-size:1.1rem;">රු. 0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="confirm-delivery-location-btn" disabled>
+                    <i data-lucide="check-circle"></i> ස්ථානය තහවුරු කරන්න
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Data Wipe Request (Run Once)
+        if (!localStorage.getItem('ju_pos_data_wiped_clean_p1')) {
+            localStorage.removeItem('ju_pos_data');
+            localStorage.removeItem('ju_offline_queue');
+            localStorage.setItem('ju_pos_data_wiped_clean_p1', 'true');
+        }
+    </script>
+    <script src="db.js?v=912"></script>
+    <script src="app.js?v=912"></script>
+    <script>
+        // Init Lucide icons initially
+        lucide.createIcons();
+
+        // Force clear old Service Workers to fix caching issues
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                for(let registration of registrations) {
+                    registration.unregister();
+                }
+            });
+            // Re-register new service worker
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js?v=912')
+                    .then(reg => console.log('SW registered!', reg))
+                    .catch(err => console.log('SW registration failed', err));
+            });
+        }
+    </script>
+</body>
+</html>
