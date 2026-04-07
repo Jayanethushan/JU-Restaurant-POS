@@ -461,8 +461,8 @@ body {
 /* Grid for Products */
 .product-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 1rem;
     padding-bottom: 2rem;
 }
 
@@ -484,7 +484,7 @@ body {
 
 .product-img-wrapper {
     position: relative;
-    height: 140px;
+    height: 110px;
     width: 100%;
 }
 
@@ -862,5 +862,76 @@ tbody tr:hover {
     }
     .modal-header, .modal-footer {
         display: none !important;
+    }
+}
+
+/* Mobile Responsive */
+@media (max-width: 900px) {
+    body {
+        overflow: auto !important; /* Enable page scroll on mobile */
+    }
+    #app-container {
+        display: flex !important;
+        flex-direction: column !important;
+        height: auto !important;
+        min-height: 100vh;
+    }
+    .sidebar {
+        flex-direction: row !important;
+        align-items: center;
+        padding: 0.5rem;
+        overflow-x: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border-glass);
+    }
+    .sidebar .logo {
+        margin-bottom: 0;
+        padding: 0 0.5rem;
+    }
+    .sidebar .logo h2 {
+        display: none; /* Hide text to save space */
+    }
+    .nav-links {
+        display: flex;
+        gap: 0.5rem;
+    }
+    .nav-links li {
+        padding: 0.5rem 1rem;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+        white-space: nowrap;
+    }
+    .nav-links li.active {
+        border-left-color: transparent;
+        border-bottom-color: var(--accent-cyan);
+        background: linear-gradient(0deg, var(--accent-cyan-glow) 0%, transparent 100%);
+    }
+    .bottom-nav {
+        flex-direction: row;
+        padding: 0;
+        align-items: center;
+        margin-left: auto;
+    }
+    .main-content {
+        height: auto;
+        overflow: visible;
+        padding: 1rem;
+    }
+    .cart-sidebar {
+        border-left: none;
+        border-top: 2px solid var(--accent-cyan);
+        height: auto !important;
+    }
+    .cart-items {
+        max-height: 350px !important; 
+        overflow-y: auto;
+        flex-grow: 0 !important; 
+    }
+    .product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+    }
+    .modal-content {
+        width: 95% !important;
+        margin: 10px;
     }
 }
