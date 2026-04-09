@@ -216,7 +216,7 @@
                 <button class="close-modal"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body">
-                <form id="inventory-form">
+                <form id="inventory-form" onsubmit="event.preventDefault();">
                     <input type="hidden" id="inv-id">
                     <div class="form-group">
                         <label>අයිතමයේ නම *</label>
@@ -240,7 +240,6 @@
                             <label>විකුණුම් මිල (Selling Price) *</label>
                             <input type="number" id="inv-price" required min="0" step="0.5">
                         </div>
-                    </div>
                         <div class="form-group" style="flex:1;">
                             <label>ආරම්භක තොගය</label>
                             <input type="number" id="inv-stock" min="0" value="0">
@@ -287,7 +286,7 @@
                 <button class="close-modal"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body">
-                <form id="rm-form">
+                <form id="rm-form" onsubmit="event.preventDefault(); App.handleRMSave();">
                     <input type="hidden" id="rm-id">
                     <div class="form-group">
                         <label>නම *</label>
@@ -316,8 +315,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
-                <button class="neon-btn" style="margin-top:0;" onclick="App.handleRMSave()">සුරකින්න</button>
+                <button type="button" class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button type="button" class="neon-btn" style="margin-top:0;" onclick="App.handleRMSave()">සුරකින්න</button>
             </div>
         </div>
     </div>
@@ -330,7 +329,7 @@
                 <button class="close-modal"><i data-lucide="x"></i></button>
             </div>
             <div class="modal-body">
-                <form id="sup-form">
+                <form id="sup-form" onsubmit="event.preventDefault(); App.handleSupplierSave();">
                     <input type="hidden" id="sup-id">
                     <div class="form-group">
                         <label>ආයතනය / නම *</label>
@@ -347,8 +346,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
-                <button class="neon-btn" style="margin-top:0;" onclick="App.handleSupplierSave()">සුරකින්න</button>
+                <button type="button" class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button type="button" class="neon-btn" style="margin-top:0;" onclick="App.handleSupplierSave()">සුරකින්න</button>
             </div>
         </div>
     </div>
@@ -387,8 +386,8 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
-                <button class="neon-btn" style="margin-top:0;" onclick="App.handlePurchaseSave()">සුරකින්න</button>
+                <button type="button" class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button type="button" class="neon-btn" style="margin-top:0;" onclick="App.handlePurchaseSave()">සුරකින්න</button>
             </div>
         </div>
     </div>
