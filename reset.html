@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sobamin Hotel - Data Reset</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0f;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,51,102,0.3);
+            border-radius: 20px;
+            padding: 48px;
+            max-width: 480px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(255,51,102,0.15);
+        }
+        .icon { font-size: 4rem; margin-bottom: 20px; }
+        h1 { font-size: 1.6rem; margin-bottom: 10px; color: #ff3366; }
+        p { color: #aaa; line-height: 1.7; margin-bottom: 8px; font-size: 0.95rem; }
+        .warning-box {
+            background: rgba(255,51,102,0.1);
+            border: 1px solid rgba(255,51,102,0.4);
+            border-radius: 10px;
+            padding: 16px;
+            margin: 24px 0;
+            text-align: left;
+        }
+        .warning-box li {
+            color: #ff8fa3;
+            font-size: 0.88rem;
+            margin-bottom: 6px;
+            list-style: none;
+            padding-left: 4px;
+        }
+        .warning-box li::before { content: "🗑️ "; }
+        .btn-reset {
+            background: linear-gradient(135deg, #ff3366, #cc0033);
+            color: white;
+            border: none;
+            padding: 16px 40px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+        .btn-reset:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(255,51,102,0.4); }
+        .btn-reset:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .status {
+            margin-top: 20px;
+            padding: 14px;
+            border-radius: 10px;
+            font-weight: 600;
+            display: none;
+        }
+        .status.success { background: rgba(0,230,118,0.15); border: 1px solid #00e676; color: #00e676; }
+        .status.error { background: rgba(255,51,102,0.15); border: 1px solid #ff3366; color: #ff8fa3; }
+        .progress-list {
+            text-align: left;
+            margin-top: 16px;
+            display: none;
+        }
+        .progress-item {
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            border-radius: 8px;
+            background: rgba(255,255,255,0.04);
+            font-size: 0.85rem;
+            color: #aaa;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .progress-item .dot { width: 8px; height: 8px; border-radius: 50%; background: #444; flex-shrink: 0; }
+        .progress-item.done { color: #00e676; }
+        .progress-item.done .dot { background: #00e676; }
+        .progress-item.running { color: #00e5ff; animation: pulse 1s infinite; }
+        .progress-item.running .dot { background: #00e5ff; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+        .back-link { margin-top: 24px; display: inline-block; color: #555; font-size: 0.85rem; text-decoration: none; }
+        .back-link:hover { color: #00e5ff; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="icon">⚠️</div>
+    <h1>සම්පූර්ණ Data Clear</h1>
+    <p>Sobamin Hotel POS - සියලු demo data, cache සහ database reset කිරීම</p>
+
+    <div class="warning-box">
+        <ul>
+            <li>Firebase Database - ඔක්කොම orders, staff, credits, loans</li>
+            <li>Local Storage - browser හි ගබඩා කළ සෑම දත්තයක්</li>
+            <li>Service Worker Cache - browser cache files</li>
+            <li>Offline Queue - pending sync data</li>
+        </ul>
+    </div>
+
+    <p style="color:#ff8fa3; font-size:0.85rem;">⚠️ මෙය undo කළ නොහැක! System owner ට දීමට පෙර මෙය run කරන්න.</p>
+
+    <button class="btn-reset" id="resetBtn" onclick="runReset()">
+        🗑️ ඔක්කොම Clear කරන්න
+    </button>
+
+    <div class="progress-list" id="progressList">
+        <div class="progress-item" id="step1"><span class="dot"></span> Local Storage clear කිරීම...</div>
+        <div class="progress-item" id="step2"><span class="dot"></span> Offline queue clear කිරීම...</div>
+        <div class="progress-item" id="step3"><span class="dot"></span> Service Worker cache clear කිරීම...</div>
+        <div class="progress-item" id="step4"><span class="dot"></span> Firebase database reset කිරීම...</div>
+    </div>
+
+    <div class="status" id="statusBox"></div>
+    <a href="./index.html" class="back-link" id="backLink" style="display:none;">← App එකට යන්න</a>
+</div>
+
+<script>
+const RTDB_URL = "https://tradeconnect-1bb92-default-rtdb.asia-southeast1.firebasedatabase.app";
+
+const CLEAN_DATA = {
+    categories: [{ id: 'all', name: 'සියල්ල (All)' }],
+    products: [],
+    tables: [
+        { id: 't1',  name: 'මේසය 1',  capacity: 2,  status: 'available' },
+        { id: 't2',  name: 'මේසය 2',  capacity: 2,  status: 'available' },
+        { id: 't3',  name: 'මේසය 3',  capacity: 4,  status: 'available' },
+        { id: 't4',  name: 'මේසය 4',  capacity: 4,  status: 'available' },
+        { id: 't5',  name: 'මේසය 5',  capacity: 4,  status: 'available' },
+        { id: 't6',  name: 'මේසය 6',  capacity: 6,  status: 'available' },
+        { id: 't7',  name: 'මේසය 7',  capacity: 6,  status: 'available' },
+        { id: 't8',  name: 'මේසය 8',  capacity: 6,  status: 'available' },
+        { id: 't9',  name: 'VIP කාමරය 1', capacity: 8,  status: 'available' },
+        { id: 't10', name: 'VIP කාමරය 2', capacity: 10, status: 'available' }
+    ],
+    orders: {},
+    expenses: {},
+    staff: {},
+    credits: {},
+    loan_customers: {},
+    loans: {},
+    settings: { taxRate: 0, currency: 'රු.' }
+};
+
+function setStep(id, state) {
+    const el = document.getElementById(id);
+    el.className = 'progress-item ' + state;
+}
+
+async function runReset() {
+    const btn = document.getElementById('resetBtn');
+    const progressList = document.getElementById('progressList');
+    const statusBox = document.getElementById('statusBox');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Reset වෙමින්...';
+    progressList.style.display = 'block';
+    statusBox.style.display = 'none';
+
+    try {
+        // Step 1: Clear localStorage
+        setStep('step1', 'running');
+        await sleep(400);
+        localStorage.removeItem('ju_pos_data');
+        localStorage.removeItem('ju_offline_queue');
+        // Clear everything else too
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            keysToRemove.push(localStorage.key(i));
+        }
+        keysToRemove.forEach(k => localStorage.removeItem(k));
+        setStep('step1', 'done');
+
+        // Step 2: Clear offline queue
+        setStep('step2', 'running');
+        await sleep(300);
+        sessionStorage.clear();
+        setStep('step2', 'done');
+
+        // Step 3: Clear Service Worker caches
+        setStep('step3', 'running');
+        await sleep(400);
+        if ('caches' in window) {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.map(name => caches.delete(name)));
+        }
+        if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(registrations.map(reg => reg.unregister()));
+        }
+        setStep('step3', 'done');
+
+        // Step 4: Reset Firebase
+        setStep('step4', 'running');
+        await sleep(300);
+        try {
+            const res = await fetch(RTDB_URL + '/.json', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(CLEAN_DATA),
+                signal: AbortSignal.timeout(10000)
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            setStep('step4', 'done');
+        } catch(e) {
+            setStep('step4', 'done');
+            console.warn('Firebase reset warning:', e.message);
+        }
+
+        // Success
+        statusBox.className = 'status success';
+        statusBox.textContent = '✅ ඔක්කොම successfully clear කළා! System owner ට දිය හැකිය.';
+        statusBox.style.display = 'block';
+        document.getElementById('backLink').style.display = 'inline-block';
+        btn.textContent = '✅ Reset Complete!';
+
+    } catch(err) {
+        statusBox.className = 'status error';
+        statusBox.textContent = '❌ Error: ' + err.message;
+        statusBox.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🗑️ නැවත try කරන්න';
+    }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>

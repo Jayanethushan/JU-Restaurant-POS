@@ -1,1 +1,1 @@
-# JU-Restaurant-POS
+# JU-SOBAMIN-POS

@@ -25,6 +25,10 @@ const INITIAL_DATA = {
     credits: {},
     loan_customers: {},
     loans: {},
+    raw_materials: {},
+    suppliers: {},
+    purchases: {},
+    caterings: {},
     settings: {
         taxRate: 0,
         currency: 'රු.'
@@ -45,6 +49,10 @@ class Database {
         if (!this.data.staff) this.data.staff = {};
         if (!this.data.loan_customers) this.data.loan_customers = {};
         if (!this.data.loans) this.data.loans = {};
+        if (!this.data.raw_materials) this.data.raw_materials = {};
+        if (!this.data.suppliers) this.data.suppliers = {};
+        if (!this.data.purchases) this.data.purchases = {};
+        if (!this.data.caterings) this.data.caterings = {};
 
         this.localOrders = Array.isArray(this.data.orders) ? this.data.orders : Object.values(this.data.orders || {});
         this.localExpenses = Array.isArray(this.data.expenses) ? this.data.expenses : Object.values(this.data.expenses || {});
@@ -52,6 +60,10 @@ class Database {
         this.localCredits = Array.isArray(this.data.credits) ? this.data.credits : Object.values(this.data.credits || {});
         this.localLoanCustomers = Object.values(this.data.loan_customers || {});
         this.localLoans = Object.values(this.data.loans || {});
+        this.localRawMaterials = Object.values(this.data.raw_materials || {});
+        this.localSuppliers = Object.values(this.data.suppliers || {});
+        this.localPurchases = Object.values(this.data.purchases || {});
+        this.localCaterings = Object.values(this.data.caterings || {});
     }
 
     async init() {
@@ -78,6 +90,10 @@ class Database {
                 cloudData.credits = cloudData.credits || {};
                 cloudData.loan_customers = cloudData.loan_customers || {};
                 cloudData.loans = cloudData.loans || {};
+                cloudData.raw_materials = cloudData.raw_materials || {};
+                cloudData.suppliers = cloudData.suppliers || {};
+                cloudData.purchases = cloudData.purchases || {};
+                cloudData.caterings = cloudData.caterings || {};
 
                 this.localOrders = Object.values(cloudData.orders);
                 this.localExpenses = Object.values(cloudData.expenses);
@@ -85,6 +101,10 @@ class Database {
                 this.localCredits = Object.values(cloudData.credits);
                 this.localLoanCustomers = Object.values(cloudData.loan_customers);
                 this.localLoans = Object.values(cloudData.loans);
+                this.localRawMaterials = Object.values(cloudData.raw_materials);
+                this.localSuppliers = Object.values(cloudData.suppliers);
+                this.localPurchases = Object.values(cloudData.purchases);
+                this.localCaterings = Object.values(cloudData.caterings);
 
                 this.data = cloudData;
                 localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
@@ -142,11 +162,31 @@ class Database {
                 this.data.loan_customers = mergedLoanCust;
                 this.localLoanCustomers = Object.values(mergedLoanCust);
 
-                // Loans: merge (IMPORTANT - prevents auto-clear)
+                // Loans: merge
                 const cloudLoans = cloudData.loans || {};
                 const mergedLoans = { ...( this.data.loans || {} ), ...cloudLoans };
                 this.data.loans = mergedLoans;
                 this.localLoans = Object.values(mergedLoans);
+
+                const cloudRaw = cloudData.raw_materials || {};
+                const mergedRaw = { ...( this.data.raw_materials || {} ), ...cloudRaw };
+                this.data.raw_materials = mergedRaw;
+                this.localRawMaterials = Object.values(mergedRaw);
+
+                const cloudSup = cloudData.suppliers || {};
+                const mergedSup = { ...( this.data.suppliers || {} ), ...cloudSup };
+                this.data.suppliers = mergedSup;
+                this.localSuppliers = Object.values(mergedSup);
+
+                const cloudPur = cloudData.purchases || {};
+                const mergedPur = { ...( this.data.purchases || {} ), ...cloudPur };
+                this.data.purchases = mergedPur;
+                this.localPurchases = Object.values(mergedPur);
+
+                const cloudCaterings = cloudData.caterings || {};
+                const mergedCaterings = { ...( this.data.caterings || {} ), ...cloudCaterings };
+                this.data.caterings = mergedCaterings;
+                this.localCaterings = Object.values(mergedCaterings);
 
                 // Settings & Products: use cloud if set, else keep local
                 if (cloudData.settings) this.data.settings = cloudData.settings;
@@ -297,9 +337,27 @@ class Database {
         
         order.items.forEach(item => {
             const pIdx = this.data.products.findIndex(p => p.id === item.id);
-            if(pIdx !== -1 && this.data.products[pIdx].stock !== undefined) {
-                this.data.products[pIdx].stock -= item.qty;
-                this.pushToCloud(`products/${pIdx}/stock`, this.data.products[pIdx].stock);
+            if(pIdx !== -1) {
+                const product = this.data.products[pIdx];
+                if(product.stock !== undefined) {
+                    this.data.products[pIdx].stock -= item.qty;
+                    this.pushToCloud(`products/${pIdx}/stock`, this.data.products[pIdx].stock);
+                }
+                
+                // BOM/Recipe Deduction (Raw Materials)
+                if(product.recipe && Array.isArray(product.recipe)) {
+                    product.recipe.forEach(ri => {
+                        const rId = ri.rawMaterialId;
+                        const qtyToDeduct = ri.qty * item.qty;
+                        if(this.data.raw_materials[rId]) {
+                            this.data.raw_materials[rId].stock -= qtyToDeduct;
+                            // update local array
+                            const rmIdx = this.localRawMaterials.findIndex(r => r.id === rId);
+                            if(rmIdx !== -1) this.localRawMaterials[rmIdx].stock = this.data.raw_materials[rId].stock;
+                            this.pushToCloud(`raw_materials/${rId}/stock`, this.data.raw_materials[rId].stock);
+                        }
+                    });
+                }
             }
         });
     }
@@ -415,6 +473,106 @@ class Database {
         delete this.data.loans[id];
         this.localLoans = this.localLoans.filter(l => l.id !== id);
         this.pushToCloud(`loans/${id}`, null, 'DELETE');
+    }
+
+    /* ---- RAW MATERIALS ---- */
+    getRawMaterials() { return this.localRawMaterials; }
+    saveRawMaterial(rm) {
+        if(!this.data.raw_materials) this.data.raw_materials = {};
+        const isNew = !rm.id;
+        if(isNew) rm.id = 'rm_' + Date.now();
+        this.data.raw_materials[rm.id] = rm;
+        const idx = this.localRawMaterials.findIndex(r => r.id === rm.id);
+        if(idx !== -1) this.localRawMaterials[idx] = rm;
+        else this.localRawMaterials.push(rm);
+        this.pushToCloud(`raw_materials/${rm.id}`, rm);
+        return rm.id;
+    }
+    deleteRawMaterial(id) {
+        delete this.data.raw_materials[id];
+        this.localRawMaterials = this.localRawMaterials.filter(r => r.id !== id);
+        this.pushToCloud(`raw_materials/${id}`, null, 'DELETE');
+    }
+
+    /* ---- SUPPLIERS ---- */
+    getSuppliers() { return this.localSuppliers; }
+    saveSupplier(sup) {
+        if(!this.data.suppliers) this.data.suppliers = {};
+        const isNew = !sup.id;
+        if(isNew) sup.id = 'sup_' + Date.now();
+        this.data.suppliers[sup.id] = sup;
+        const idx = this.localSuppliers.findIndex(s => s.id === sup.id);
+        if(idx !== -1) this.localSuppliers[idx] = sup;
+        else this.localSuppliers.push(sup);
+        this.pushToCloud(`suppliers/${sup.id}`, sup);
+        return sup.id;
+    }
+    updateSupplierBalance(id, amountChange) {
+        const sup = this.data.suppliers[id];
+        if(!sup) return;
+        sup.balance = (sup.balance || 0) + amountChange;
+        const idx = this.localSuppliers.findIndex(s => s.id === id);
+        if(idx !== -1) this.localSuppliers[idx].balance = sup.balance;
+        this.pushToCloud(`suppliers/${id}/balance`, sup.balance);
+    }
+
+    /* ---- PURCHASES ---- */
+    getPurchases() { return this.localPurchases; }
+    savePurchase(pur) {
+        if(!this.data.purchases) this.data.purchases = {};
+        const isNew = !pur.id;
+        if(isNew) pur.id = 'pur_' + Date.now();
+        this.data.purchases[pur.id] = pur;
+        const idx = this.localPurchases.findIndex(p => p.id === pur.id);
+        if(idx !== -1) this.localPurchases[idx] = pur;
+        else this.localPurchases.push(pur);
+        this.pushToCloud(`purchases/${pur.id}`, pur);
+        
+        // If raw materials are tied, increment stock
+        if (pur.items && Array.isArray(pur.items)) {
+            pur.items.forEach(i => {
+                const rmp = this.data.raw_materials[i.rawMaterialId];
+                if(rmp) {
+                    rmp.stock += i.qty;
+                    const rmIdx = this.localRawMaterials.findIndex(r => r.id === i.rawMaterialId);
+                    if(rmIdx !== -1) this.localRawMaterials[rmIdx].stock = rmp.stock;
+                    this.pushToCloud(`raw_materials/${i.rawMaterialId}/stock`, rmp.stock);
+                }
+            });
+        }
+        
+        // If there is an unpaid amount, add to supplier balance
+        if (pur.supplierId && pur.unpaidAmount > 0) {
+            this.updateSupplierBalance(pur.supplierId, pur.unpaidAmount);
+        }
+
+        return pur.id;
+    }
+
+    /* ---- CATERING / EVENTS ---- */
+    getCaterings() { return this.localCaterings; }
+    saveCatering(cat) {
+        if(!this.data.caterings) this.data.caterings = {};
+        const isNew = !cat.id;
+        if(isNew) cat.id = 'cat_' + Date.now();
+        this.data.caterings[cat.id] = cat;
+        const idx = this.localCaterings.findIndex(c => c.id === cat.id);
+        if(idx !== -1) this.localCaterings[idx] = cat;
+        else this.localCaterings.push(cat);
+        this.pushToCloud(`caterings/${cat.id}`, cat);
+        return cat.id;
+    }
+    patchCatering(id, patch) {
+        if(!this.data.caterings[id]) return;
+        this.data.caterings[id] = { ...this.data.caterings[id], ...patch };
+        const idx = this.localCaterings.findIndex(c => c.id === id);
+        if(idx !== -1) this.localCaterings[idx] = this.data.caterings[id];
+        this.pushToCloud(`caterings/${id}`, this.data.caterings[id]);
+    }
+    deleteCatering(id) {
+        delete this.data.caterings[id];
+        this.localCaterings = this.localCaterings.filter(c => c.id !== id);
+        this.pushToCloud(`caterings/${id}`, null, 'DELETE');
     }
 
     /* Metrics with Expense & Discounts */

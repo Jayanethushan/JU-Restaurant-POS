@@ -180,6 +180,20 @@ class AppCore {
                 }
             });
         }
+
+        // Save custom note for cart item
+        const saveNoteBtn = document.getElementById('save-note-btn');
+        if (saveNoteBtn) {
+            saveNoteBtn.addEventListener('click', () => {
+                const idx = parseInt(document.getElementById('note-item-idx').value);
+                const note = document.getElementById('cart-item-note').value.trim();
+                if (idx >= 0 && idx < this.state.cart.length) {
+                    this.state.cart[idx].note = note;
+                    this.updateCartUI();
+                    document.getElementById('note-modal').classList.remove('active');
+                }
+            });
+        }
     }
 
     showToast(message, type='success') {
@@ -457,8 +471,11 @@ class AppCore {
             case 'dashboard': this.renderDashboard(container); break;
             case 'reports': this.renderReports(container); break;
             case 'inventory': this.renderInventory(container); break;
+            case 'raw-materials': this.renderRawMaterials(container); break;
+            case 'suppliers': this.renderSuppliers(container); break;
             case 'staff': this.renderStaff(container); break;
             case 'credits': this.renderCredits(container); break;
+            case 'catering': this.renderCatering(container); break;
         }
     }
 
@@ -611,18 +628,20 @@ class AppCore {
                 totalQty += item.qty;
 
                 const modifierHtml = item.modifiers ? `<br><small style="color:var(--text-secondary);font-size:0.75rem;">(+ ${item.modifiers})</small>` : '';
+                const noteHtml = item.note ? `<br><small style="color:var(--accent-warning);font-size:0.75rem;">✏️ ${item.note}</small>` : '';
 
                 const div = document.createElement('div');
                 div.className = 'cart-item-card';
                 div.innerHTML = `
                     <button class="remove-item-btn" data-idx="${index}"><i data-lucide="x"></i></button>
                     <div class="cart-item-header" style="padding-top:8px;">
-                        <span class="cart-item-name">${item.name} ${modifierHtml}</span>
+                        <span class="cart-item-name">${item.name} ${modifierHtml} ${noteHtml}</span>
                         <span class="cart-item-price">${currency} ${itemTotal.toFixed(2)}</span>
                     </div>
                     <div class="cart-item-controls">
                         <span style="font-size: 0.8rem; color: var(--text-secondary)">${currency} ${item.price} x ${item.qty}</span>
                         <div class="qty-controls">
+                            <button class="action-btn add-note-inline-btn" data-idx="${index}" style="padding:4px; margin-right:15px; border-color:var(--accent-warning); color:var(--accent-warning);" title="සටහනක් එක් කරන්න"><i data-lucide="edit-3" style="width:14px;height:14px;"></i></button>
                             <button class="qty-btn minus" data-idx="${index}"><i data-lucide="minus" style="width:14px;height:14px;"></i></button>
                             <span style="font-size:0.9rem;font-weight:bold;width:20px;text-align:center;">${item.qty}</span>
                             <button class="qty-btn plus" data-idx="${index}"><i data-lucide="plus" style="width:14px;height:14px;"></i></button>
@@ -633,6 +652,11 @@ class AppCore {
                 div.querySelector('.remove-item-btn').addEventListener('click', () => this.removeCartItem(index));
                 div.querySelector('.minus').addEventListener('click', () => this.updateCartItemQty(index, -1));
                 div.querySelector('.plus').addEventListener('click', () => this.updateCartItemQty(index, 1));
+                div.querySelector('.add-note-inline-btn').addEventListener('click', () => {
+                    document.getElementById('note-item-idx').value = index;
+                    document.getElementById('cart-item-note').value = this.state.cart[index].note || '';
+                    document.getElementById('note-modal').classList.add('active');
+                });
                 
                 cartItemsContainer.appendChild(div);
             });
@@ -929,6 +953,7 @@ class AppCore {
             const p = i.price * i.qty;
             let n = i.name;
             if(i.modifiers) n += ` (${i.modifiers})`;
+            if(i.note) n += ` [✏️ ${i.note}]`;
             itemsBox.innerHTML += `<div class="receipt-item"><span>${i.qty}x ${n}</span><span>${currency} ${p.toFixed(2)}</span></div>`;
         });
 
@@ -1019,11 +1044,21 @@ class AppCore {
                 const card = document.createElement('div');
                 card.className = `table-card ${isOccupied ? 'table-occupied' : 'table-available'}`;
 
+                let diffMin = 0;
+                let activeTimeStr = '🟢 හිස්';
+                if(tOrder) {
+                    diffMin = Math.floor((new Date() - new Date(tOrder.timestamp)) / 60000);
+                    let color = 'var(--text-secondary)';
+                    if (diffMin > 15) color = 'var(--accent-danger)';
+                    else if (diffMin > 10) color = 'var(--accent-warning)';
+                    activeTimeStr = `🔴 භාවිතයේ (${diffMin}min ago)`;
+                }
+
                 let html = `
                     <h3>${table.name}</h3>
                     <div class="table-capacity"><i data-lucide="users" style="width:14px;height:14px;"></i> ආසන: ${table.capacity}</div>
                     <div style="margin-top:0.8rem; font-size:0.85rem; font-weight:bold; color:${isOccupied ? 'var(--accent-danger)' : 'var(--accent-success)'}">
-                        ${isOccupied ? '🔴 භාවිතයේ' : '🟢 හිස්'}
+                        ${activeTimeStr}
                     </div>`;
 
                 if (tOrder) {
@@ -1165,6 +1200,7 @@ class AppCore {
                 return `<li class="kds-item">
                     <strong style="color:var(--accent-cyan)">${i.qty}x</strong> ${i.name}
                     ${i.modifiers ? `<br><small style="color:var(--text-secondary); margin-left: 20px;">- ${i.modifiers}</small>` : ''}
+                    ${i.note ? `<br><small style="color:var(--accent-warning); margin-left: 20px;">✏️ ${i.note}</small>` : ''}
                 </li>`;
             }).join('');
 
@@ -1564,6 +1600,11 @@ class AppCore {
             document.getElementById('inventory-form').reset();
             document.getElementById('inv-id').value = '';
             document.getElementById('inv-modal-title').textContent = 'නව අයිතමයක් එක් කරන්න';
+            
+            window._tempRecipeArray = [];
+            this.populateRecipeOptions();
+            this.renderRecipeListUI();
+
             document.getElementById('inventory-modal').classList.add('active');
         });
 
@@ -1602,6 +1643,10 @@ class AppCore {
             name, price, costPrice, category, stock, image
         };
         if(modifierArr && modifierArr.length > 0) prodObj.modifiers = modifierArr;
+        
+        if(window._tempRecipeArray && window._tempRecipeArray.length > 0) {
+            prodObj.recipe = window._tempRecipeArray;
+        }
 
         if(id) {
             db.updateProduct(id, prodObj);
@@ -1614,6 +1659,358 @@ class AppCore {
         document.getElementById('inventory-modal').classList.remove('active');
         this.renderView();
     }
+
+    /* ---- RECIPE & BOM UI HELPERS ---- */
+    populateRecipeOptions() {
+        const sel = document.getElementById('inv-recipe-select');
+        if(!sel) return;
+        const rms = db.getRawMaterials();
+        sel.innerHTML = '<option value="">-- අමුද්‍රව්‍යයක් තෝරන්න --</option>';
+        rms.forEach(r => {
+            sel.innerHTML += `<option value="${r.id}">${r.name} (${r.unit})</option>`;
+        });
+    }
+
+    addRecipeItemToUI() {
+        const sel = document.getElementById('inv-recipe-select');
+        const qtyInp = document.getElementById('inv-recipe-qty');
+        const unitSel = document.getElementById('inv-recipe-unit');
+        
+        const rId = sel.value;
+        const inputQty = parseFloat(qtyInp.value);
+
+        if(!rId || isNaN(inputQty) || inputQty <= 0) return this.showToast('අමුද්‍රව්‍යය සහ ප්‍රමාණය නිවැරදිව ලබාදෙන්න', 'error');
+
+        const rm = db.getRawMaterials().find(r => r.id === rId);
+        if(!rm) return;
+
+        let selectedUnit = unitSel ? unitSel.value : rm.unit;
+        let baseUnit = rm.unit.toLowerCase();
+        selectedUnit = selectedUnit.toLowerCase();
+        
+        let calculatedBaseQty = inputQty;
+
+        // Perform known conversions to baseline unit of the raw material
+        if (baseUnit === 'kg' && selectedUnit === 'g') calculatedBaseQty = inputQty / 1000;
+        else if (baseUnit === 'g' && selectedUnit === 'kg') calculatedBaseQty = inputQty * 1000;
+        else if (baseUnit === 'l' && selectedUnit === 'ml') calculatedBaseQty = inputQty / 1000;
+        else if (baseUnit === 'ml' && selectedUnit === 'l') calculatedBaseQty = inputQty * 1000;
+        else {
+             selectedUnit = rm.unit; // Default back to base unit if unsupported mapping
+        }
+
+        // Ensure array exists
+        window._tempRecipeArray = window._tempRecipeArray || [];
+        
+        // Prevent duplicates
+        if(window._tempRecipeArray.find(ri => ri.rawMaterialId === rId)) {
+            return this.showToast('මෙම අමුද්‍රව්‍යය දැනටමත් ලැයිස්තුවේ ඇත!', 'error');
+        }
+
+        window._tempRecipeArray.push({ 
+             rawMaterialId: rId, 
+             qty: calculatedBaseQty, // Base quantity for db math
+             displayQty: inputQty,  // Quantity entered by user
+             name: rm.name, 
+             unit: selectedUnit,    // Unit entered by user
+             baseUnit: rm.unit      // Original basic unit
+        });
+        
+        this.renderRecipeListUI();
+        this.updateRecipeCostCalculation();
+        
+        sel.value = '';
+        qtyInp.value = '';
+    }
+
+    updateRecipeCostCalculation() {
+        if(!window._tempRecipeArray) return;
+        let totalCost = 0;
+        const rms = db.getRawMaterials();
+        
+        window._tempRecipeArray.forEach(ri => {
+            const rm = rms.find(r => r.id === ri.rawMaterialId);
+            if(rm && rm.costPerUnit) {
+                totalCost += (ri.qty * rm.costPerUnit);
+            }
+        });
+        
+        const costInput = document.getElementById('inv-cost');
+        if(costInput) {
+            // Avoid wiping out user input if recipe is completely empty (maybe they typed a manual cost before adding a recipe)
+            // But if there are items, we strictly enforce auto-calculation
+            if(window._tempRecipeArray.length > 0) {
+                costInput.value = totalCost.toFixed(2);
+                costInput.classList.add('flash-highlight');
+                setTimeout(() => costInput.classList.remove('flash-highlight'), 500);
+            }
+        }
+    }
+
+    renderRecipeListUI() {
+        const cont = document.getElementById('inv-recipe-items');
+        if(!cont) return;
+        window._tempRecipeArray = window._tempRecipeArray || [];
+        cont.innerHTML = '';
+        window._tempRecipeArray.forEach((ri, idx) => {
+            cont.innerHTML += `
+                <div style="display:flex; justify-content:space-between; background:var(--bg-dark); padding:5px 10px; margin-bottom:5px; border-radius:4px; font-size:0.85rem;">
+                    <span>${ri.name}</span>
+                    <span><strong style="color:var(--accent-cyan)">${ri.displayQty || ri.qty} ${ri.unit}</strong> <button type="button" style="background:none;border:none;color:var(--accent-danger);cursor:pointer;margin-left:10px;" onclick="App.removeRecipeItemFromUI(${idx})"><i data-lucide="x" style="width:14px;"></i></button></span>
+                </div>
+            `;
+        });
+        lucide.createIcons();
+    }
+
+    removeRecipeItemFromUI(idx) {
+        if(window._tempRecipeArray) {
+            window._tempRecipeArray.splice(idx, 1);
+            this.renderRecipeListUI();
+            
+            if(window._tempRecipeArray.length > 0) {
+                 this.updateRecipeCostCalculation();
+            } else {
+                 document.getElementById('inv-cost').value = ''; // Reset if recipe is cleared
+            }
+        }
+    }
+
+    editProduct(id) {
+        const product = db.getProducts('all').find(p => p.id === id);
+        if(!product) return;
+        document.getElementById('inv-id').value = product.id;
+        document.getElementById('inv-name').value = product.name;
+        document.getElementById('inv-price').value = product.price;
+        document.getElementById('inv-cost').value = product.costPrice || 0;
+        document.getElementById('inv-category').value = product.category;
+        document.getElementById('inv-stock').value = product.stock !== undefined ? product.stock : '';
+        document.getElementById('inv-image').value = product.image || '';
+        document.getElementById('inv-mods').value = product.modifiers ? product.modifiers.join(', ') : '';
+        
+        window._tempRecipeArray = product.recipe ? JSON.parse(JSON.stringify(product.recipe)) : [];
+        this.populateRecipeOptions();
+        this.renderRecipeListUI();
+
+        document.getElementById('inv-modal-title').textContent = 'අයිතමය වෙනස් කරන්න';
+        document.getElementById('inventory-modal').classList.add('active');
+    }
+
+    /* --- RAW MATERIALS --- */
+    renderRawMaterials(container) {
+        const header = document.createElement('div');
+        header.className = 'view-header';
+        header.innerHTML = `
+            <h2>අමුද්‍රව්‍ය (Raw Materials / BOM)</h2>
+            <button class="neon-btn" style="width:auto; margin:0;" onclick="App.openAddRMModal()"><i data-lucide="plus"></i> නව අමුද්‍රව්‍යයක්</button>
+        `;
+        container.appendChild(header);
+
+        const rms = db.getRawMaterials();
+        const currency = this.getCurrency();
+
+        const tableContainer = document.createElement('div');
+        tableContainer.className = 'inventory-table-container';
+
+        if(rms.length === 0) {
+            tableContainer.innerHTML = '<div class="empty-cart" style="padding:2rem;">අමුද්‍රව්‍ය කිසිවක් එක් කර නැත.</div>';
+        } else {
+            let innerTbl = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>නම</th>
+                            <th>ඒකකය (Unit)</th>
+                            <th>තොගය (Stock)</th>
+                            <th>ඒකකයක මිල</th>
+                            <th>ක්‍රියා</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            rms.forEach(r => {
+                const isLow = r.stock <= 5;
+                const rowStyle = isLow ? 'background:rgba(255,51,102,0.1);' : '';
+                innerTbl += `
+                    <tr style="${rowStyle}">
+                        <td><strong style="color:var(--text-primary);">${r.name}</strong></td>
+                        <td>${r.unit}</td>
+                        <td style="${isLow ? 'color:var(--accent-danger);font-weight:bold;' : 'color:var(--accent-success);'}">${r.stock}</td>
+                        <td>${currency} ${parseFloat(r.costPerUnit || 0).toFixed(2)}</td>
+                        <td>
+                            <button class="action-btn danger" onclick="App.deleteRawMaterial('${r.id}')"><i data-lucide="trash-2" style="width:16px;"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+            innerTbl += `</tbody></table>`;
+            tableContainer.innerHTML = innerTbl;
+        }
+        container.appendChild(tableContainer);
+    }
+
+    openAddRMModal() {
+        document.getElementById('rm-form').reset();
+        document.getElementById('rm-id').value = '';
+        document.getElementById('rm-modal').classList.add('active');
+    }
+
+    handleRMSave() {
+        const name = document.getElementById('rm-name').value.trim();
+        const unit = document.getElementById('rm-unit').value;
+        const stock = parseFloat(document.getElementById('rm-stock').value) || 0;
+        const cost = parseFloat(document.getElementById('rm-cost').value);
+
+        if(!name || isNaN(cost)) return this.showToast('අත්‍යවශ්‍ය තොරතුරු ලබාදෙන්න!', 'error');
+
+        db.saveRawMaterial({
+            id: document.getElementById('rm-id').value || null,
+            name, unit, stock, costPerUnit: cost
+        });
+
+        this.showToast('අමුද්‍රව්‍යය සුරැකිණි', 'success');
+        document.getElementById('rm-modal').classList.remove('active');
+        this.renderView();
+    }
+
+    deleteRawMaterial(id) {
+        if(confirm('මෙය ස්ථිරවම මකා දමන්නද?')) {
+            db.deleteRawMaterial(id);
+            this.showToast('මකා දමන ලදී!', 'success');
+            this.renderView();
+        }
+    }
+
+    /* --- SUPPLIERS --- */
+    renderSuppliers(container) {
+        const header = document.createElement('div');
+        header.className = 'view-header';
+        header.innerHTML = `
+            <h2>සැපයුම්කරුවන් (Suppliers)</h2>
+            <button class="neon-btn" style="width:auto; margin:0;" onclick="App.openAddSupplierModal()"><i data-lucide="user-plus"></i> සැපයුම්කරු ලියාපදිංචිය</button>
+        `;
+        container.appendChild(header);
+
+        const sups = db.getSuppliers();
+        const currency = this.getCurrency();
+
+        const grid = document.createElement('div');
+        grid.className = 'product-grid';
+
+        if(sups.length === 0) {
+            grid.innerHTML = '<div class="empty-cart" style="grid-column:1/-1;">සැපයුම්කරුවන් එකතු කර නැත.</div>';
+        } else {
+            sups.forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'glass-card';
+                card.style.padding = '1.5rem';
+                card.style.position = 'relative';
+                
+                const bal = s.balance || 0;
+                const balClass = bal > 0 ? 'color:var(--accent-danger);' : 'color:var(--accent-success);';
+                
+                card.innerHTML = `
+                    <div style="text-align:center; margin-bottom:1rem;">
+                        <h3 style="font-size:1.1rem; color:var(--text-primary);">${s.name}</h3>
+                        <p style="color:var(--text-secondary); font-size:0.85rem; margin-top:5px;"><i data-lucide="phone" style="width:12px;"></i> ${s.phone || '-'}</p>
+                        <p style="color:var(--text-secondary); font-size:0.8rem;">${s.address || '-'}</p>
+                        
+                        <div style="background:rgba(0,0,0,0.3); border-radius:6px; padding:10px; margin-top:10px; border:1px solid ${bal > 0 ? 'var(--accent-danger)' : 'var(--border-glass)'};">
+                            <span style="font-size:0.8rem; color:var(--text-secondary);">ගෙවිය යුතු (Payables):</span><br>
+                            <strong style="font-size:1.2rem; ${balClass}">${currency} ${bal.toFixed(2)}</strong>
+                        </div>
+                        
+                        <button class="action-btn" style="width:100%; justify-content:center; margin-top:10px; border-color:var(--accent-success); color:var(--accent-success);" onclick="App.openPurchaseModal('${s.id}')">
+                            <i data-lucide="shopping-bag" style="width:16px;"></i> + මීලදී ගැනීමක් (Purchase)
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+        container.appendChild(grid);
+    }
+
+    openAddSupplierModal() {
+        document.getElementById('sup-form').reset();
+        document.getElementById('sup-id').value = '';
+        document.getElementById('supplier-modal').classList.add('active');
+    }
+
+    handleSupplierSave() {
+        const name = document.getElementById('sup-name').value.trim();
+        const phone = document.getElementById('sup-phone').value.trim();
+        const address = document.getElementById('sup-address').value.trim();
+
+        if(!name) return this.showToast('සැපයුම්කරුගේ නම අවශ්‍යයි', 'error');
+
+        db.saveSupplier({ id: document.getElementById('sup-id').value || null, name, phone, address, balance: 0 });
+        this.showToast('සැපයුම්කරු සුරැකිණි', 'success');
+        document.getElementById('supplier-modal').classList.remove('active');
+        this.renderView();
+    }
+
+    openPurchaseModal(supId) {
+        const s = db.getSuppliers().find(x => x.id === supId);
+        if(!s) return;
+        
+        document.getElementById('pur-sup-id').value = s.id;
+        document.getElementById('pur-sup-name').textContent = s.name;
+        document.getElementById('pur-sup-balance').textContent = `${this.getCurrency()} ${(s.balance || 0).toFixed(2)}`;
+        
+        const rmSel = document.getElementById('pur-rm-select');
+        rmSel.innerHTML = '<option value="">-- අමුද්‍රව්‍යයක් තෝරන්න (නැත්නම් හිස්ව තබන්න) --</option>';
+        db.getRawMaterials().forEach(r => {
+            rmSel.innerHTML += `<option value="${r.id}">${r.name} (${r.unit})</option>`;
+        });
+        
+        document.getElementById('pur-qty').value = '';
+        document.getElementById('pur-total').value = '';
+        document.getElementById('pur-paid').value = '0';
+        
+        document.getElementById('purchase-modal').classList.add('active');
+    }
+
+    handlePurchaseSave() {
+        const supId = document.getElementById('pur-sup-id').value;
+        const rmId = document.getElementById('pur-rm-select').value;
+        const qty = parseFloat(document.getElementById('pur-qty').value) || 0;
+        const total = parseFloat(document.getElementById('pur-total').value);
+        const paid = parseFloat(document.getElementById('pur-paid').value) || 0;
+
+        if(isNaN(total)) return this.showToast('මුළු වටිනාකම ඇතුලත් කරන්න', 'error');
+
+        const pur = {
+            id: null,
+            supplierId: supId,
+            total,
+            paidAmount: paid,
+            unpaidAmount: total - paid,
+            timestamp: new Date().toISOString()
+        };
+
+        if(rmId && qty > 0) {
+            pur.items = [{ rawMaterialId: rmId, qty }];
+        }
+
+        db.savePurchase(pur);
+        
+        // Add expense record
+        if(paid > 0) {
+            db.addExpense({
+                id: 'exp_' + Date.now(),
+                category: 'සැපයුම්කරුවන් සඳහා ගෙවීම්',
+                description: `Purchase Payment - Supplier: ${document.getElementById('pur-sup-name').textContent}`,
+                amount: paid,
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        this.showToast('මිලදී ගැනීම සහ ගෙවීම සටහන් කළා', 'success');
+        document.getElementById('purchase-modal').classList.remove('active');
+        this.renderView();
+    }
+
 
     editProduct(id) {
         const p = db.getProducts('all').find(x => x.id === id);
@@ -2058,6 +2455,155 @@ class AppCore {
         this.showToast('ඉවත් කළා', 'info');
         this.renderView();
         if(custId) setTimeout(() => this.loanSelectCustomer(custId), 100);
+    }
+
+    /* ---- CATERING / EVENT ORDERS ---- */
+    renderCatering(container) {
+        const header = document.createElement('div');
+        header.className = 'view-header';
+        header.innerHTML = `
+            <h2>උත්සව / කේටරින් ඇණවුම් (Catering Orders)</h2>
+            <button class="neon-btn" style="width:auto; margin:0;" onclick="App.openAddCateringModal()"><i data-lucide="calendar-plus"></i> නව උත්සවයක්</button>
+        `;
+        container.appendChild(header);
+
+        const caterings = db.getCaterings();
+        const currency = this.getCurrency();
+
+        const grid = document.createElement('div');
+        grid.className = 'product-grid';
+
+        if(caterings.length === 0) {
+            grid.innerHTML = '<div class="empty-cart" style="grid-column:1/-1;">උත්සව ඇණවුම් කිසිවක් නැත.</div>';
+        } else {
+            caterings.sort((a,b) => new Date(a.eventDate) - new Date(b.eventDate)).forEach(cat => {
+                const card = document.createElement('div');
+                card.className = 'glass-card';
+                card.style.padding = '1.5rem';
+                card.style.position = 'relative';
+                
+                const bal = (cat.totalAmount || 0) - (cat.advancePaid || 0);
+                const balClass = bal > 0 ? 'color:var(--accent-danger);' : 'color:var(--accent-success);';
+                
+                const evtDate = new Date(cat.eventDate);
+                const dateStr = evtDate.toLocaleDateString() + ' ' + evtDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                card.innerHTML = `
+                    <div style="margin-bottom:1rem;">
+                        <h3 style="font-size:1.1rem; color:var(--text-primary); margin-bottom:5px;">${cat.eventType || 'උත්සවය'}</h3>
+                        <p style="color:var(--accent-cyan); font-size:0.9rem; font-weight:bold;">📅 ${dateStr}</p>
+                        <hr style="border:none; border-top:1px dashed var(--border-glass); margin:10px 0;">
+                        <p style="color:var(--text-secondary); font-size:0.85rem;"><i data-lucide="user" style="width:14px; height:14px;"></i> ${cat.customerName} (${cat.phone})</p>
+                        <p style="color:var(--text-secondary); font-size:0.85rem; margin-top:5px;"><i data-lucide="users" style="width:14px; height:14px;"></i> ආරාධිතයින්: ${cat.noOfGuests || 0}</p>
+                        
+                        <div style="background:var(--bg-dark); border-radius:6px; padding:10px; margin-top:10px; font-size:0.8rem; color:var(--text-secondary); max-height:80px; overflow-y:auto;">
+                            🍽️ ${cat.menuDetails || 'මෙනුවක් නැත'}
+                        </div>
+
+                        <div style="background:rgba(0,0,0,0.3); border-radius:6px; padding:10px; margin-top:10px; border:1px solid ${bal > 0 ? 'var(--accent-danger)' : 'var(--accent-success)'};">
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>මුළු මුදල:</span> <strong>${currency} ${(cat.totalAmount||0).toFixed(2)}</strong></div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>අත්තිකාරම්:</span> <strong style="color:var(--accent-success);">${currency} ${(cat.advancePaid||0).toFixed(2)}</strong></div>
+                            <div style="display:flex; justify-content:space-between; font-size:0.9rem; margin-top:5px; border-top:1px solid var(--border-glass); padding-top:5px;"><span>ගෙවිය යුතු:</span> <strong style="${balClass}">${currency} ${bal.toFixed(2)}</strong></div>
+                        </div>
+                    </div>
+                    <button class="action-btn danger" onclick="App.deleteCatering('${cat.id}')" style="position:absolute; top:10px; right:10px; padding:6px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+                    ${cat.status !== 'completed' ? `<button class="action-btn success" style="width:100%; justify-content:center; margin-top:10px;" onclick="App.completeCatering('${cat.id}')"><i data-lucide="check-circle" style="width:16px;"></i> සම්පූර්ණයි (Completed)</button>` : `<div style="text-align:center; margin-top:10px; color:var(--accent-success); padding:5px; border:1px dashed var(--accent-success); border-radius:6px;">සම්පූර්ණයි</div>`}
+                `;
+                grid.appendChild(card);
+            });
+        }
+        container.appendChild(grid);
+        requestAnimationFrame(() => lucide.createIcons());
+    }
+
+    openAddCateringModal() {
+        document.getElementById('cat-form').reset();
+        document.getElementById('cat-id').value = '';
+        
+        // set default tomorrow date
+        const d = new Date();
+        d.setDate(d.getDate() + 1);
+        d.setHours(12, 0, 0, 0);
+        // format to string: YYYY-MM-DDTHH:mm
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mn = String(d.getMinutes()).padStart(2, '0');
+        document.getElementById('cat-date').value = `${yyyy}-${mm}-${dd}T${hh}:${mn}`;
+        
+        document.getElementById('catering-modal').classList.add('active');
+    }
+
+    handleCateringSave() {
+        const customerName = document.getElementById('cat-name').value.trim();
+        const phone = document.getElementById('cat-phone').value.trim();
+        const eventDate = document.getElementById('cat-date').value;
+        const eventType = document.getElementById('cat-type').value.trim();
+        const noOfGuests = parseInt(document.getElementById('cat-guests').value) || 0;
+        const menuDetails = document.getElementById('cat-menu').value.trim();
+        const totalAmount = parseFloat(document.getElementById('cat-total').value) || 0;
+        const advancePaid = parseFloat(document.getElementById('cat-advance').value) || 0;
+
+        if(!customerName || !phone || !eventDate || totalAmount <= 0) {
+            return this.showToast('කරුණාකර අවශ්‍ය සියලුම තොරතුරු නිවැරදිව ලබාදෙන්න!', 'error');
+        }
+
+        const ev = {
+            id: document.getElementById('cat-id').value || null,
+            customerName, phone, eventDate, eventType,
+            noOfGuests, menuDetails, totalAmount, advancePaid,
+            status: 'upcoming',
+            createdAt: new Date().toISOString()
+        };
+
+        db.saveCatering(ev);
+        
+        // Log advance as income/revenue (we can save it into expenses with negative amount, or we can just leave it as is for now)
+        if (advancePaid > 0) {
+            // Ideally we'd have an incomes table, but for now we might let it be just tracked in the caterings.
+        }
+
+        this.showToast('උත්සව ඇණවුම සාර්ථකව සුරැකිණි', 'success');
+        document.getElementById('catering-modal').classList.remove('active');
+        this.renderView();
+    }
+
+    deleteCatering(id) {
+        if(confirm('මෙම උත්සව ඇණවුම මකා දැමීමට අවශ්‍ය බව විශ්වාසද?')) {
+            db.deleteCatering(id);
+            this.showToast('මකා දමන ලදී!', 'success');
+            this.renderView();
+        }
+    }
+
+    completeCatering(id) {
+        if(confirm('මෙම උත්සවය සාර්ථකව අවසන් කළාද?')) {
+            db.patchCatering(id, { status: 'completed' });
+            
+            // Add as order so it is reflected in revenue
+            const cat = db.getCaterings().find(c => c.id === id);
+            if(cat) {
+                 const dt = new Date();
+                 const strId = \`\${dt.getFullYear()}\${String(dt.getMonth()+1).padStart(2,'0')}\${String(dt.getDate()).padStart(2,'0')}-\${String(dt.getHours()).padStart(2,'0')}\${String(dt.getMinutes()).padStart(2,'0')}CAT\`;
+                 const order = {
+                     id: \`ORD-\${strId}\`,
+                     type: 'catering',
+                     items: [{ id: 'cat', name: \`කේටරින්: \${cat.eventType || 'උත්සවය'} (\${cat.customerName})\`, price: cat.totalAmount, qty: 1 }],
+                     discount: 0,
+                     serviceCharge: 0,
+                     subtotal: cat.totalAmount,
+                     tax: 0,
+                     total: cat.totalAmount,
+                     timestamp: dt.toISOString(),
+                     kdsStatus: 'completed' // Immediately complete
+                 };
+                 db.placeOrder(order);
+            }
+
+            this.showToast('උත්සවය අවසන් කරන ලදී!', 'success');
+            this.renderView();
+        }
     }
 
 } // end class AppCore

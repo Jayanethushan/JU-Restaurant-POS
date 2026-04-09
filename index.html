@@ -41,8 +41,11 @@
                 <li data-tab="dashboard"><i data-lucide="pie-chart"></i> දත්ත පුවරුව (Dashboard)</li>
                 <li data-tab="reports"><i data-lucide="bar-chart-2"></i> වාර්තා (Reports)</li>
                 <li data-tab="inventory"><i data-lucide="package"></i> ගබඩාව (Inventory)</li>
+                <li data-tab="raw-materials"><i data-lucide="layers"></i> අමුද්‍රව්‍ය (Raw Materials)</li>
+                <li data-tab="suppliers"><i data-lucide="truck"></i> සැපයුම්කරුවන් (Suppliers)</li>
                 <li data-tab="staff"><i data-lucide="users"></i> සේවක මණ්ඩලය (Staff)</li>
                 <li data-tab="credits"><i data-lucide="book-open"></i> පාරිභෝගික ණය (Credits)</li>
+                <li data-tab="catering"><i data-lucide="calendar"></i> උත්සව ඇණවුම් (Catering)</li>
             </ul>
             <div class="bottom-nav">
                 <div class="clock" id="live-clock">00:00:00</div>
@@ -144,6 +147,27 @@
         </div>
     </div>
 
+    <!-- Custom Note Modal -->
+    <div class="modal-overlay" id="note-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>සටහනක් එක් කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="note-item-idx">
+                <div class="form-group">
+                    <label>අයිතමය සඳහා විශේෂ සටහන (Custom Note)</label>
+                    <input type="text" id="cart-item-note" placeholder="උදා: මිරිස් අඩුවෙන් (Less Spicy)">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" id="save-note-btn">සටහන සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Receipt Print Modal -->
     <div class="modal-overlay" id="receipt-modal">
         <div class="modal-content">
@@ -154,11 +178,13 @@
             <div class="modal-body" style="background:#fff; color:#000; padding:0; display:flex; justify-content:center;">
                 <!-- Actual Print Div -->
                 <div id="receipt-content">
-                    <div class="receipt-header">
-                        <h2>Ju pos</h2>
-                        <p id="receipt-date"></p>
-                        <p>Order #<span id="receipt-id"></span> | <span id="receipt-type"></span></p>
-                        <p id="receipt-table-info" style="display:none;"></p>
+                    <div class="receipt-header" style="text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px;">
+                        <h2 style="margin: 0; font-size: 1.5rem;">Sobamin Hotel</h2>
+                        <p style="margin: 2px 0; font-size: 0.85rem; color: #333;">No 45, Main Road, Kurunegala</p>
+                        <p style="margin: 2px 0 10px; font-size: 0.85rem; color: #333;">Tel: 037-1234567 | Reg: 12345</p>
+                        <p id="receipt-date" style="margin: 2px 0; font-size: 0.85rem;"></p>
+                        <p style="margin: 2px 0; font-size: 0.9rem; font-weight: bold;">Order #<span id="receipt-id"></span> | <span id="receipt-type"></span></p>
+                        <p id="receipt-table-info" style="display:none; font-size: 0.85rem; font-weight: bold;"></p>
                     </div>
                     <div id="receipt-items"></div>
                     <div class="receipt-totals">
@@ -166,7 +192,13 @@
                         <div class="receipt-item"><span>සේවා ගාස්තුව</span><span id="r-tax"></span></div>
                         <div class="receipt-item" style="font-weight:bold; font-size:1.1rem; margin-top:10px;"><span>මුළු මුදල</span><span id="r-total"></span></div>
                     </div>
-                    <div style="text-align:center; margin-top:15px; font-size:0.8rem;">ස්තුතියි! නැවත එන්න!</div>
+                    <div style="text-align:center; margin-top:15px; font-size:0.8rem;">
+                        <p style="margin-bottom: 5px; font-weight: bold;">ස්තුතියි! නැවත එන්න!</p>
+                        <div id="receipt-qr" style="margin: 10px auto; width: 80px; height: 80px; border: 1px solid #000; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-direction: column;">
+                            <i data-lucide="qr-code" style="width: 40px; height: 40px;"></i>
+                            <span>Scan to Pay</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -218,6 +250,22 @@
                         <label>අමතර වෙනස්කම් (Modifiers - කොමාවකින් වෙන් කරන්න)</label>
                         <input type="text" id="inv-mods" placeholder="උදා: Regular, Large, Family">
                     </div>
+                    <div class="form-group" style="border:1px dashed var(--border-glass); padding:10px; border-radius:8px;">
+                        <label>වට්ටෝරුව / අමුද්‍රව්‍යයන් (Recipe / BOM) - විකල්ප</label>
+                        <div id="inv-recipe-items" style="margin-bottom:10px; max-height:160px; overflow-y:auto; overflow-x:hidden; padding-right:5px; scrollbar-width:thin;"></div>
+                        <div style="display:flex; gap:5px; align-items:center;">
+                            <select id="inv-recipe-select" style="flex:2;"><option value="">-- අමුද්‍රව්‍යයක් තෝරන්න --</option></select>
+                            <input type="number" id="inv-recipe-qty" placeholder="ප්‍රමාණය" style="flex:1;">
+                            <select id="inv-recipe-unit" style="flex:1;">
+                                <option value="g">g (ග්‍රෑම්)</option>
+                                <option value="kg">kg (කිලෝ)</option>
+                                <option value="ml">ml (මිලිලීටර්)</option>
+                                <option value="l">L (ලීටර්)</option>
+                                <option value="pcs">pcs (කෑලි)</option>
+                            </select>
+                            <button type="button" class="action-btn" onclick="App.addRecipeItemToUI()">➕</button>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label>පින්තූරයේ URL එක</label>
                         <input type="url" id="inv-image" placeholder="https://...">
@@ -227,6 +275,120 @@
             <div class="modal-footer">
                 <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
                 <button class="neon-btn" style="margin-top:0;" id="save-inventory-btn">අයිතමය සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Raw Material Modal -->
+    <div class="modal-overlay" id="rm-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>නව අමුද්‍රව්‍යයක් එක් කරන්න</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="rm-form">
+                    <input type="hidden" id="rm-id">
+                    <div class="form-group">
+                        <label>නම *</label>
+                        <input type="text" id="rm-name" required placeholder="උදා: සම්බා හාල්, කුකුල් මස්">
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label>ඒකකය (Unit) *</label>
+                            <select id="rm-unit" required>
+                                <option value="g">ග්‍රෑම් (g)</option>
+                                <option value="kg">කිලෝග්‍රෑම් (kg)</option>
+                                <option value="ml">මිලි ලීටර් (ml)</option>
+                                <option value="l">ලීටර් (L)</option>
+                                <option value="pcs">කෑලි (Pcs)</option>
+                            </select>
+                        </div>
+                        <div style="flex:1;">
+                            <label>තොගය (Stock)</label>
+                            <input type="number" id="rm-stock" min="0" value="0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>ඒකකයක මිල (Price Per Unit) *</label>
+                        <input type="number" id="rm-cost" required min="0" step="0.01" placeholder="රු.">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.handleRMSave()">සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Supplier Modal -->
+    <div class="modal-overlay" id="supplier-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>සැපයුම්කරු ලියාපදිංචිය</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="sup-form">
+                    <input type="hidden" id="sup-id">
+                    <div class="form-group">
+                        <label>ආයතනය / නම *</label>
+                        <input type="text" id="sup-name" required placeholder="උදා: එළවලු කඩේ">
+                    </div>
+                    <div class="form-group">
+                        <label>දුරකථන අංකය</label>
+                        <input type="text" id="sup-phone">
+                    </div>
+                    <div class="form-group">
+                        <label>ලිපිනය</label>
+                        <input type="text" id="sup-address">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.handleSupplierSave()">සුරකින්න</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Purchase Modal -->
+    <div class="modal-overlay" id="purchase-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>නව මිලදී ගැනීමක් (Purchase)</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="pur-sup-id">
+                <div class="glass-card" style="padding:15px; margin-bottom:15px; background:rgba(0,0,0,0.3);">
+                    <h4 id="pur-sup-name" style="color:var(--accent-cyan); margin-bottom:5px;"></h4>
+                    <p style="font-size:0.9rem; color:var(--text-secondary);">දැනට ගෙවිය යුතු: <span id="pur-sup-balance" style="color:var(--accent-danger); font-weight:bold;">0</span></p>
+                </div>
+                
+                <div class="form-group">
+                    <label>මිලදී ගත් අයිතමය</label>
+                    <select id="pur-rm-select"><option value="">-- අමුද්‍රව්‍යයක් තෝරන්න (නැත්නම් හිස්ව තබන්න) --</option></select>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <div class="form-group" style="flex:1;">
+                        <label>ප්‍රමාණය</label>
+                        <input type="number" id="pur-qty" min="0" placeholder="0">
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label>මුළු වටිනාකම (Total) *</label>
+                        <input type="number" id="pur-total" min="0" step="0.5" required placeholder="රු.">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="color:var(--accent-success);">ගෙවූ මුදල (Paid Amount) *</label>
+                    <input type="number" id="pur-paid" min="0" step="0.5" required value="0">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.handlePurchaseSave()">සුරකින්න</button>
             </div>
         </div>
     </div>
@@ -629,6 +791,63 @@
                 <button class="neon-btn" style="margin-top:0;" id="confirm-delivery-location-btn" disabled>
                     <i data-lucide="check-circle"></i> ස්ථානය තහවුරු කරන්න
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Catering Modal -->
+    <div class="modal-overlay" id="catering-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="cat-modal-title">නව උත්සව ඇණවුමක් (Catering Order)</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="cat-form">
+                    <input type="hidden" id="cat-id">
+                    <div class="form-group">
+                        <label>පාරිභෝගිකයාගේ නම *</label>
+                        <input type="text" id="cat-name" required placeholder="උදා: නිමල්">
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label>දුරකථන අංකය *</label>
+                            <input type="text" id="cat-phone" required>
+                        </div>
+                        <div style="flex:1;">
+                            <label>ආරාධිතයින් ගණන (Guests)</label>
+                            <input type="number" id="cat-guests" min="1" value="50">
+                        </div>
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label>දිනය සහ වේලාව *</label>
+                            <input type="datetime-local" id="cat-date" required>
+                        </div>
+                        <div style="flex:1;">
+                            <label>උත්සවයේ වර්ගය</label>
+                            <input type="text" id="cat-type" placeholder="උදා: උපන්දින සාදය">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>මෙනුව සහ සටහන් (Menu Details)</label>
+                        <textarea id="cat-menu" rows="3" style="width:100%; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); border-radius:8px; padding:10px; resize:vertical;"></textarea>
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:1;">
+                            <label>මුළු එකතුව (Total) *</label>
+                            <input type="number" id="cat-total" min="0" required>
+                        </div>
+                        <div style="flex:1;">
+                            <label>අත්තිකාරම් මුදල (Advance)</label>
+                            <input type="number" id="cat-advance" min="0" value="0">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button class="neon-btn" style="margin-top:0;" onclick="App.handleCateringSave()">සුරකින්න</button>
             </div>
         </div>
     </div>
