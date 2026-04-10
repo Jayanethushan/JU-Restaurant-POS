@@ -10,7 +10,8 @@ class AppCore {
             discount: { val: 0, type: 'amount' },
             serviceCharge: { val: 0, type: 'amount' },
             deliveryCharge: 0,
-            deliveryLocation: null  // { lat, lng, name, distance }
+            deliveryLocation: null,  // { lat, lng, name, distance }
+            reportDateRange: 'today'
         };
         
         this.elements = {
@@ -1228,90 +1229,146 @@ class AppCore {
         lucide.createIcons();
     }
 
+    /* --- HELPERS --- */
+    getReportDates(range) {
+        let start = new Date();
+        let end = new Date();
+        start.setHours(0,0,0,0);
+        end.setHours(23,59,59,999);
+        
+        switch(range) {
+            case 'today': break;
+            case 'yesterday': 
+                start.setDate(start.getDate()-1); 
+                end.setDate(end.getDate()-1); 
+                break;
+            case 'last3days':
+                start.setDate(start.getDate()-2);
+                break;
+            case 'thisweek':
+                start.setDate(start.getDate() - start.getDay() + (start.getDay() === 0 ? -6 : 1));
+                break;
+            case 'thismonth':
+                start.setDate(1);
+                break;
+            case 'thisyear':
+                start.setMonth(0, 1);
+                break;
+        }
+        return { start, end };
+    }
+
     /* --- DASHBOARD --- */
     renderDashboard(container) {
+         const drStr = {
+             'today': 'අද (Today)', 'yesterday': 'ඊයේ (Yesterday)', 'last3days': 'පසුගිය දවස් 3 (Last 3 Days)',
+             'thisweek': 'මේ සතිය (This Week)', 'thismonth': 'මේ මාසය (This Month)', 'thisyear': 'මේ අවුරුද්ද (This Year)'
+         };
+         
          const header = document.createElement('div');
          header.className = 'view-header';
-         header.innerHTML = '<h2>ප්‍රධාන දත්ත පුවරුව (Dashboard)</h2><span style="color:var(--text-secondary);">අද දින සාර්ථක වූ මෙහෙයුම් වලින් ලැබෙන සජීවී දත්ත</span>';
+         header.innerHTML = `
+            <div>
+                <h2>ප්‍රධාන දත්ත පුවරුව (Dashboard)</h2>
+                <span style="color:var(--text-secondary);">තෝරාගත් කාල සීමාව: ${drStr[this.state.reportDateRange]}</span>
+            </div>
+            <select id="dash-dt-filter" style="padding:8px; border-radius:6px; background:var(--bg-dark); color:var(--text-primary); border:1px solid var(--border-glass); cursor:pointer;">
+                ${Object.keys(drStr).map(k => `<option value="${k}" ${this.state.reportDateRange===k?'selected':''}>${drStr[k]}</option>`).join('')}
+            </select>
+         `;
          container.appendChild(header);
+
+         setTimeout(() => {
+             const filter = document.getElementById('dash-dt-filter');
+             if(filter) filter.addEventListener('change', (e) => {
+                 this.state.reportDateRange = e.target.value;
+                 this.renderView();
+             });
+         }, 10);
          
-         const metrics = db.getMetrics();
+         const dates = this.getReportDates(this.state.reportDateRange);
+         const metrics = db.getMetrics(dates.start, dates.end);
          const currency = this.getCurrency();
          
          const grids = document.createElement('div');
          grids.className = 'dashboard-grid';
          grids.innerHTML = `
             <div class="glass-card metric-card primary">
-                <div class="metric-title">අද දවසේ ආදායම</div>
+                <div class="metric-title">මුළු ආදායම (Total Cash Flow)</div>
                 <div class="metric-value">${currency} ${metrics.revenue.toLocaleString()}</div>
+                <div style="font-size:0.75rem; margin-top:5px; color:var(--text-secondary);">සාමාන්‍ය වෙළඳාම්: ${currency} ${metrics.cashRevenue.toLocaleString()} | ණය පියවීම්: ${currency} ${metrics.loanPayments.toLocaleString()}</div>
             </div>
             <div class="glass-card metric-card secondary">
-                <div class="metric-title">ලාභය (අද)</div>
+                <div class="metric-title">ශුද්ධ ලාභය (Net Profit)</div>
                 <div class="metric-value">${currency} ${metrics.profit.toLocaleString()}</div>
+                <div style="font-size:0.75rem; margin-top:5px; color:var(--text-secondary);">- බඩු වියදම් (COGS): ${currency} ${Math.round(metrics.cogs).toLocaleString()} | වෙනත්: ${currency} ${metrics.totalExpenses.toLocaleString()}</div>
+            </div>
+            <div class="glass-card metric-card" style="border-top:2px solid var(--accent-danger);">
+                <div class="metric-title">ණයට විකිණූ මුදල (Credit Sales)</div>
+                <div class="metric-value" style="color:var(--accent-danger)">${currency} ${metrics.creditSalesAmount.toLocaleString()}</div>
             </div>
             <div class="glass-card metric-card">
-                <div class="metric-title">මුළු ඇණවුම්</div>
+                <div class="metric-title">මෙම කාලයේ මුළු ඇණවුම්</div>
                 <div class="metric-value" style="color:var(--text-primary)">${metrics.orders}</div>
-            </div>
-            <div class="glass-card metric-card">
-                <div class="metric-title">භාවිතයේ ඇති මේස</div>
-                <div class="metric-value" style="color:var(--text-primary)">
-                    ${metrics.activeTables} <span style="font-size:1rem;color:var(--text-secondary)">/ ${metrics.totalTables}</span>
-                </div>
             </div>
          `;
          container.appendChild(grids);
-         
-         const chartMock = document.createElement('div');
-         chartMock.className = 'glass-card';
-         chartMock.style.padding = '2rem';
-         chartMock.style.height = '300px';
-         chartMock.style.display = 'flex';
-         chartMock.style.flexDirection = 'column';
-         chartMock.style.justifyContent = 'flex-end';
-         chartMock.style.position = 'relative';
-
-         chartMock.innerHTML = `
-            <h3 style="position:absolute; top: 1.5rem; left: 1.5rem; color: var(--text-secondary);">විකුණුම් ක්‍රියාකාරකම් සටහන (Timeline)</h3>
-            <div style="display:flex; gap:1rem; height: 180px; align-items:flex-end; width:100%; border-bottom: 1px solid var(--border-glass);">
-                ${[40, 60, 20, 80, 50, 90, 100].map(h => `
-                    <div style="flex:1; background: linear-gradient(0deg, var(--accent-cyan-glow) 0%, var(--accent-cyan) 100%); height: ${h}%; border-radius: 4px 4px 0 0; opacity: 0.8;"></div>
-                `).join('')}
-            </div>
-            <div style="display:flex; justify-content:space-between; margin-top: 10px; color:var(--text-secondary); font-size:0.8rem;">
-                <span>9 AM</span><span>11 AM</span><span>1 PM</span><span>3 PM</span><span>5 PM</span><span>7 PM</span><span>9 PM</span>
-            </div>
-         `;
-         container.appendChild(chartMock);
     }
 
     /* --- REPORTS MODULE --- */
     renderReports(container) {
+        const drStr = {
+             'today': 'අද', 'yesterday': 'ඊයේ', 'last3days': 'පසුගිය දවස් 3',
+             'thisweek': 'මේ සතිය', 'thismonth': 'මේ මාසය', 'thisyear': 'මේ අවුරුද්ද'
+         };
+
         const header = document.createElement('div');
         header.className = 'view-header';
         header.innerHTML = `
-            <h2>වාර්තා (Reports)</h2>
+            <div>
+                <h2>වාර්තා (Reports)</h2>
+                <div style="display:flex; gap:10px; margin-top:5px; align-items:center;">
+                    <select id="report-dt-filter" style="padding:8px; border-radius:6px; background:var(--bg-dark); color:var(--text-primary); border:1px solid var(--border-glass); cursor:pointer;">
+                        ${Object.keys(drStr).map(k => `<option value="${k}" ${this.state.reportDateRange===k?'selected':''}>${drStr[k]}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
             <button class="neon-btn" style="width:auto; margin:0;" onclick="document.getElementById('expense-modal').classList.add('active');"><i data-lucide="plus"></i> වියදමක් එක් කරන්න</button>
         `;
         container.appendChild(header);
 
-        const metrics = db.getMetrics();
-        const exps = db.getExpenses().sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        setTimeout(() => {
+             const filter = document.getElementById('report-dt-filter');
+             if(filter) filter.addEventListener('change', (e) => {
+                 this.state.reportDateRange = e.target.value;
+                 this.renderView();
+             });
+        }, 10);
+
+        const dates = this.getReportDates(this.state.reportDateRange);
+        const metrics = db.getMetrics(dates.start, dates.end);
+        
+        // Filter expenses strictly by date range for report list
+        const exps = db.getExpenses().filter(e => {
+            const dt = new Date(e.timestamp);
+            return dt >= dates.start && dt <= dates.end;
+        }).sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
         const currency = this.getCurrency();
 
         const dashContainer = document.createElement('div');
         dashContainer.innerHTML = `
             <div class="dashboard-grid" style="grid-template-columns: repeat(3, 1fr);">
                 <div class="glass-card metric-card" style="border-color:var(--accent-cyan);">
-                    <div class="metric-title">මුළු විකුණුම් (Revenue)</div>
+                    <div class="metric-title">මුළු ଆදායම (Revenue)</div>
                     <div class="metric-value" style="color:var(--accent-cyan);">${currency} ${metrics.revenue.toLocaleString()}</div>
                 </div>
                 <div class="glass-card metric-card" style="border-color:var(--accent-danger);">
-                    <div class="metric-title">මුළු වියදම් (Expenses)</div>
-                    <div class="metric-value" style="color:var(--accent-danger);">${currency} ${metrics.totalExpenses.toLocaleString()}</div>
+                    <div class="metric-title">මුළු ගනුදෙනු වියදම් (Expenses + COGS)</div>
+                    <div class="metric-value" style="color:var(--accent-danger);">${currency} ${Math.round(metrics.totalExpenses + metrics.cogs).toLocaleString()}</div>
                 </div>
                 <div class="glass-card metric-card" style="border-color:var(--accent-success);">
-                    <div class="metric-title">දළ ලාභය (Profit)</div>
+                    <div class="metric-title">ශුද්ධ ලාභය (Net Profit)</div>
                     <div class="metric-value" style="color:var(--accent-success);">${currency} ${metrics.profit.toLocaleString()}</div>
                 </div>
             </div>
@@ -1337,6 +1394,29 @@ class AppCore {
                                 <td>${e.description}</td>
                                 <td style="color:var(--accent-danger); font-weight:bold;">${currency} ${e.amount.toFixed(2)}</td>
                                 <td><button class="action-btn danger" onclick="App.deleteExpense('${e.id}')"><i data-lucide="trash-2" style="width:16px;"></i></button></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 style="margin:20px 0 10px; border-bottom:1px solid var(--border-glass); padding-bottom:5px;">පද්ධති ක්‍රියාකාරකම් ඉතිහාසය (Audit Trail)</h3>
+            <div class="inventory-table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>දිනය/වේලාව</th>
+                            <th>ක්‍රියාව (Action)</th>
+                            <th>විස්තරය (Details)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${db.getActionLogs().length === 0 ? `<tr><td colspan="3" style="text-align:center;color:var(--text-secondary);">ක්‍රියාකාරකම් කිසිවක් සටහන් වී නැත</td></tr>` : 
+                        db.getActionLogs().slice(0, 50).map(log => `
+                            <tr>
+                                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                                <td><span class="badge" style="background:var(--accent-purple); color:white;">${log.action}</span></td>
+                                <td>${log.details}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -1399,10 +1479,18 @@ class AppCore {
                 card.style.padding = '1.5rem';
                 card.style.position = 'relative';
                 
+                let isClockedIn = false;
+                if(s.attendance && s.attendance.length > 0) {
+                    const lastRec = s.attendance[s.attendance.length - 1];
+                    if(!lastRec.clockOut) isClockedIn = true;
+                }
+                
                 card.innerHTML = `
                     <div style="text-align:center; margin-bottom:1rem;">
-                        <div style="width:60px; height:60px; border-radius:50%; background:var(--accent-purple-glow); color:var(--text-primary); margin:0 auto 10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; border:2px solid var(--accent-purple);">
+                        <button class="action-btn danger" onclick="App.deleteStaff('${s.id}')" style="position:absolute; top:10px; right:10px; padding:4px; z-index:10;"><i data-lucide="trash-2" style="width:14px;"></i></button>
+                        <div style="width:60px; height:60px; border-radius:50%; background:var(--accent-purple-glow); color:var(--text-primary); margin:0 auto 10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; border:2px solid var(--accent-purple); position:relative;">
                             ${s.name.charAt(0).toUpperCase()}
+                            ${isClockedIn ? '<span style="position:absolute; bottom:0; right:0; width:12px; height:12px; background:var(--accent-success); border-radius:50%; border:2px solid var(--bg-dark);"></span>' : ''}
                         </div>
                         <h3 style="font-size:1.1rem;">${s.name}</h3>
                         <p style="color:var(--accent-cyan); font-size:0.9rem; font-weight:bold; margin-top:5px;">${s.role}</p>
@@ -1410,10 +1498,16 @@ class AppCore {
                         <div style="background:rgba(0,0,0,0.3); border-radius:6px; padding:10px; margin-top:10px;">
                             <div style="display:flex; justify-content:space-between; font-size:0.8rem; margin-bottom:5px;"><span>පඩිය:</span> <strong>${this.getCurrency()} ${s.basicSalary || 0}</strong></div>
                             <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--accent-danger);"><span>ණය/අත්ති:</span> <strong>${this.getCurrency()} ${s.loanAmount || 0}</strong></div>
+                            
+                            <div style="display:flex; gap:10px; margin-top:10px; border-top:1px dashed var(--border-glass); padding-top:10px;">
+                                ${isClockedIn ? 
+                                `<button class="action-btn danger" style="flex:1; justify-content:center; font-size:0.8rem;" onclick="App.toggleAttendance('${s.id}')">🔴 වැඩ නිම කිරීම</button>` : 
+                                `<button class="action-btn primary" style="flex:1; justify-content:center; font-size:0.8rem; border-color:var(--accent-success); color:var(--accent-success);" onclick="App.toggleAttendance('${s.id}')">🟢 වැඩ ඇරඹීම</button>`
+                                }
+                            </div>
                         </div>
-                        <button class="action-btn" style="width:100%; justify-content:center; margin-top:10px; border-color:var(--accent-success); color:var(--accent-success);" onclick="App.openFinanceModal('${s.id}')"><i data-lucide="banknote" style="width:16px;"></i> පඩි / ණය කළමනාකරණය</button>
+                        <button class="action-btn" style="width:100%; justify-content:center; margin-top:10px; border-color:var(--accent-cyan); color:var(--accent-cyan);" onclick="App.openFinanceModal('${s.id}')"><i data-lucide="banknote" style="width:16px;"></i> පඩි සහ OT දීමනා</button>
                     </div>
-                    <button class="action-btn danger" onclick="App.deleteStaff('${s.id}')" style="position:absolute; top:10px; right:10px; padding:4px;"><i data-lucide="trash-2" style="width:14px;"></i></button>
                 `;
                 grid.appendChild(card);
             });
@@ -1448,6 +1542,43 @@ class AppCore {
         }
     }
 
+    toggleAttendance(id) {
+        const staffList = db.getStaff();
+        const s = staffList.find(x => x.id === id);
+        if(!s) return;
+        
+        let att = s.attendance || [];
+        if(att.length > 0 && !att[att.length - 1].clockOut) {
+            // Must clock out
+            const rec = att[att.length - 1];
+            rec.clockOut = new Date().toISOString();
+            
+            // calc hours
+            const inTime = new Date(rec.clockIn);
+            const outTime = new Date(rec.clockOut);
+            const diffHours = (outTime - inTime) / (1000 * 60 * 60);
+            rec.totalHours = diffHours;
+            // 8 hours standard work day
+            rec.otHours = diffHours > 8 ? diffHours - 8 : 0;
+            
+            db.updateStaff(id, { attendance: att });
+            this.showToast(`වැඩ නිම කිරීම සටහන් විය. මුළු පැය: ${diffHours.toFixed(1)}`, 'success');
+        } else {
+            // Must clock in
+            att.push({
+                date: new Date().toISOString().split('T')[0],
+                clockIn: new Date().toISOString(),
+                clockOut: null,
+                totalHours: 0,
+                otHours: 0,
+                paid: false
+            });
+            db.updateStaff(id, { attendance: att });
+            this.showToast('වැඩ ඇරඹීම සටහන් විය', 'success');
+        }
+        this.renderView();
+    }
+
     openFinanceModal(id) {
         const staffList = db.getStaff();
         const s = staffList.find(x => x.id === id);
@@ -1458,8 +1589,31 @@ class AppCore {
         document.getElementById('finance-basic-salary').textContent = `${this.getCurrency()} ${s.basicSalary || 0}`;
         document.getElementById('finance-current-loan').textContent = `${this.getCurrency()} ${s.loanAmount || 0}`;
         
+        // Calculate Unpaid Attendance details
+        let unpaidDays = 0;
+        let unpaidOT = 0;
+        if(s.attendance) {
+            s.attendance.forEach(a => {
+                if(a.clockOut && !a.paid) {
+                    unpaidDays++;
+                    unpaidOT += (a.otHours || 0);
+                }
+            });
+        }
+        
+        document.getElementById('finance-work-days').textContent = unpaidDays;
+        document.getElementById('finance-ot-hours').textContent = unpaidOT.toFixed(1);
+        
         document.getElementById('finance-add-loan').value = '';
         document.getElementById('finance-deduct-loan').value = '';
+        
+        // Auto Calculate Recommended OT Pay: Let's assume basic / 30 / 8 * 1.5 * otHours for standard rate
+        let otPay = 0;
+        if((s.basicSalary || 0) > 0 && unpaidOT > 0) {
+            const hrRate = (s.basicSalary / 30 / 8);
+            otPay = Math.round(hrRate * 1.5 * unpaidOT);
+        }
+        document.getElementById('finance-ot-pay').value = otPay > 0 ? otPay : '';
         document.getElementById('finance-bonus').value = '';
         
         this.calcNetSalary();
@@ -1473,9 +1627,10 @@ class AppCore {
 
         const basic = s.basicSalary || 0;
         const deduct = parseFloat(document.getElementById('finance-deduct-loan').value) || 0;
+        const otPay = parseFloat(document.getElementById('finance-ot-pay').value) || 0;
         const bonus = parseFloat(document.getElementById('finance-bonus').value) || 0;
 
-        const net = basic - deduct + bonus;
+        const net = basic - deduct + otPay + bonus;
         document.getElementById('finance-net-salary').textContent = `${this.getCurrency()} ${net.toFixed(2)}`;
     }
 
@@ -1511,19 +1666,24 @@ class AppCore {
 
         const basic = s.basicSalary || 0;
         const deduct = parseFloat(document.getElementById('finance-deduct-loan').value) || 0;
+        const otPay = parseFloat(document.getElementById('finance-ot-pay').value) || 0;
         const bonus = parseFloat(document.getElementById('finance-bonus').value) || 0;
         
         if(deduct > (s.loanAmount || 0)) return this.showToast('අඩුකරන ණය මුදල සේවකයාගේ මුළු ණයට වඩා වැඩියි!', 'error');
 
         const newLoan = (s.loanAmount || 0) - deduct;
-        const net = basic - deduct + bonus;
+        const net = basic - deduct + otPay + bonus;
 
-        db.updateStaff(s.id, { loanAmount: newLoan });
+        // Mark unpaid attendance records as paid
+        let att = s.attendance || [];
+        att.forEach(a => { if(a.clockOut) a.paid = true; });
+
+        db.updateStaff(s.id, { loanAmount: newLoan, attendance: att });
 
         db.addExpense({
             id: 'exp_'+Date.now(),
-            category: 'සේවක වැටුප්',
-            description: `${s.name} හට පඩි ගෙවීම (බෝනස්: ${bonus}, ණය කැපුම: ${deduct})`,
+            category: 'සේවක වැටුප් (Salary & OT)',
+            description: `${s.name} පඩි ගෙවීම (මූලික: ${basic}, OT: ${otPay}, වෙනත්: ${bonus}, ණය කැපුම: ${deduct})`,
             amount: net,
             timestamp: new Date().toISOString()
         });

@@ -29,6 +29,7 @@ const INITIAL_DATA = {
     suppliers: {},
     purchases: {},
     caterings: {},
+    action_logs: {},
     settings: {
         taxRate: 0,
         currency: 'රු.'
@@ -53,6 +54,7 @@ class Database {
         if (!this.data.suppliers) this.data.suppliers = {};
         if (!this.data.purchases) this.data.purchases = {};
         if (!this.data.caterings) this.data.caterings = {};
+        if (!this.data.action_logs) this.data.action_logs = {};
 
         this.localOrders = Array.isArray(this.data.orders) ? this.data.orders : Object.values(this.data.orders || {});
         this.localExpenses = Array.isArray(this.data.expenses) ? this.data.expenses : Object.values(this.data.expenses || {});
@@ -64,6 +66,7 @@ class Database {
         this.localSuppliers = Object.values(this.data.suppliers || {});
         this.localPurchases = Object.values(this.data.purchases || {});
         this.localCaterings = Object.values(this.data.caterings || {});
+        this.localActionLogs = Object.values(this.data.action_logs || {});
     }
 
     async init() {
@@ -78,12 +81,13 @@ class Database {
                 throw new Error(cloudData.error);
             }
             
-            if (!cloudData || !cloudData.settings || !cloudData.products || cloudData.products.length === 0) {
+            if (!cloudData || !cloudData.settings || !cloudData.products || Object.keys(cloudData.products).length === 0) {
                 await fetch(RTDB_URL + '/.json', { method: 'PUT', body: JSON.stringify(this.data) });
             } else {
-                cloudData.categories = cloudData.categories || [];
-                cloudData.products = cloudData.products || [];
-                cloudData.tables = cloudData.tables || [];
+                cloudData.categories = Array.isArray(cloudData.categories) ? cloudData.categories : Object.values(cloudData.categories || {});
+                cloudData.products = Array.isArray(cloudData.products) ? cloudData.products : Object.values(cloudData.products || {});
+                cloudData.tables = Array.isArray(cloudData.tables) ? cloudData.tables : Object.values(cloudData.tables || {});
+                
                 cloudData.orders = cloudData.orders || {};
                 cloudData.expenses = cloudData.expenses || {};
                 cloudData.staff = cloudData.staff || {};
@@ -128,8 +132,16 @@ class Database {
             if (cloudData) {
                 // *** MERGE strategy: cloud + local combined, local items win if not in cloud ***
                 // This prevents auto-clear of offline/pending data during polling
+                const mergedProducts = Array.isArray(cloudData.products) ? cloudData.products : Object.values(cloudData.products || {});
+                const mergedCats = Array.isArray(cloudData.categories) ? cloudData.categories : Object.values(cloudData.categories || {});
+                const mergedTables = Array.isArray(cloudData.tables) ? cloudData.tables : Object.values(cloudData.tables || {});
 
-                this.data.tables = cloudData.tables || this.data.tables || [];
+                this.data = {
+                    ...this.data,
+                    categories: mergedCats.length > 0 ? mergedCats : this.data.categories,
+                    products: mergedProducts.length > 0 ? mergedProducts : this.data.products,
+                    tables: mergedTables.length > 0 ? mergedTables : this.data.tables
+                };
 
                 // Orders: merge cloud + local (union by id)
                 const cloudOrders = cloudData.orders || {};
@@ -222,6 +234,26 @@ class Database {
             // Network failed — queue for retry
             this._queueWrite(path, payload, method);
         }
+    }
+
+    logAction(action, details) {
+        const logId = 'log_' + Date.now();
+        const logObj = {
+            id: logId,
+            action,
+            details,
+            timestamp: new Date().toISOString()
+        };
+        if(!this.data.action_logs) this.data.action_logs = {};
+        this.data.action_logs[logId] = logObj;
+        this.localActionLogs.push(logObj);
+        
+        localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
+        this.pushToCloud(`action_logs/${logId}`, logObj);
+    }
+    
+    getActionLogs() {
+        return this.localActionLogs.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
 
     _queueWrite(path, payload, method) {
@@ -576,34 +608,67 @@ class Database {
     }
 
     /* Metrics with Expense & Discounts */
-    getMetrics(dateStr = new Date().toDateString()) {
-        const dateOrders = this.localOrders.filter(o => new Date(o.timestamp).toDateString() === dateStr && o.kdsStatus === 'completed');
-        const dateExpenses = this.localExpenses.filter(e => new Date(e.timestamp).toDateString() === dateStr);
+    getMetrics(startDate = new Date(), endDate = new Date()) {
+        const start = new Date(startDate);
+        start.setHours(0,0,0,0);
+        const end = new Date(endDate);
+        end.setHours(23,59,59,999);
 
+        const dateOrders = this.localOrders.filter(o => {
+            const dt = new Date(o.timestamp);
+            return dt >= start && dt <= end && o.kdsStatus === 'completed';
+        });
+        const dateExpenses = this.localExpenses.filter(e => {
+            const dt = new Date(e.timestamp);
+            return dt >= start && dt <= end;
+        });
+
+        // Collect Loan/Credit Payments that occurred in this date range
+        let loanPayments = 0;
+        this.localLoans.forEach(l => {
+           if(l.paymentHistory) {
+              l.paymentHistory.forEach(ph => {
+                 const pdate = new Date(ph.date);
+                 if(pdate >= start && pdate <= end) {
+                     loanPayments += ph.amount;
+                 }
+              });
+           }
+        });
+        
         let cogs = 0;
-        const revenue = dateOrders.reduce((sum, o) => {
+        let creditSalesAmount = 0;
+        
+        let cashRevenue = dateOrders.reduce((sum, o) => {
             o.items.forEach(i => {
                 const prod = this.data.products.find(p => p.id === i.id);
                 if(prod && prod.costPrice > 0) cogs += (prod.costPrice * i.qty);
             });
+            
+            if (o.type === 'credit') {
+               creditSalesAmount += o.total;
+               return sum;
+            }
             return sum + o.total;
         }, 0);
-
-        const ordersCount = dateOrders.length;
-        const avgValue = ordersCount > 0 ? revenue / ordersCount : 0;
         
+        const totalRevenue = cashRevenue + loanPayments;
         const totalExpenses = dateExpenses.reduce((sum, e) => sum + e.amount, 0);
-        const profit = revenue - cogs - totalExpenses;
+        const profit = totalRevenue - cogs - totalExpenses;
 
         const activeTables = this.data.tables.filter(t => t.status === 'occupied').length;
         
         return {
-            revenue: Math.max(0, revenue),
-            orders: ordersCount,
-            avgValue: Math.round(avgValue),
+            revenue: Math.max(0, totalRevenue),
+            cashRevenue,
+            creditSalesAmount,
+            loanPayments,
+            orders: dateOrders.length,
+            avgValue: dateOrders.length > 0 ? Math.round(totalRevenue / dateOrders.length) : 0,
             activeTables,
             totalTables: this.data.tables.length,
             totalExpenses,
+            cogs,
             profit
         };
     }
