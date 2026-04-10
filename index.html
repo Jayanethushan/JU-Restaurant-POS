@@ -861,8 +861,8 @@
             localStorage.setItem('ju_pos_data_wiped_clean_p1', 'true');
         }
     </script>
-    <script src="db.js?v=912"></script>
-    <script src="app.js?v=912"></script>
+    <script src="db.js?v=913"></script>
+    <script src="app.js?v=913"></script>
     <script>
         // Init Lucide icons initially
         lucide.createIcons();
@@ -876,7 +876,7 @@
             });
             // Re-register new service worker
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js?v=912')
+                navigator.serviceWorker.register('./sw.js?v=913')
                     .then(reg => console.log('SW registered!', reg))
                     .catch(err => console.log('SW registration failed', err));
             });
