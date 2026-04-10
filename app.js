@@ -2585,11 +2585,11 @@ class AppCore {
             const cat = db.getCaterings().find(c => c.id === id);
             if(cat) {
                  const dt = new Date();
-                 const strId = \`\${dt.getFullYear()}\${String(dt.getMonth()+1).padStart(2,'0')}\${String(dt.getDate()).padStart(2,'0')}-\${String(dt.getHours()).padStart(2,'0')}\${String(dt.getMinutes()).padStart(2,'0')}CAT\`;
+                 const strId = `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}-${String(dt.getHours()).padStart(2,'0')}${String(dt.getMinutes()).padStart(2,'0')}CAT`;
                  const order = {
-                     id: \`ORD-\${strId}\`,
+                     id: `ORD-${strId}`,
                      type: 'catering',
-                     items: [{ id: 'cat', name: \`කේටරින්: \${cat.eventType || 'උත්සවය'} (\${cat.customerName})\`, price: cat.totalAmount, qty: 1 }],
+                     items: [{ id: 'cat', name: `කේටරින්: ${cat.eventType || 'උත්සවය'} (${cat.customerName})`, price: cat.totalAmount, qty: 1 }],
                      discount: 0,
                      serviceCharge: 0,
                      subtotal: cat.totalAmount,
