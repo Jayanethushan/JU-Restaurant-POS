@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jupos-v13';
+const CACHE_NAME = 'jupos-v21';
 const LOCAL_ASSETS = [
     './',
     './index.html',

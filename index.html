@@ -4,6 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Sobamin Hotel - සම්පූර්ණ අවන්හල් පද්ධතිය</title>
+    <script>
+        window.addEventListener('error', function(e) {
+            document.body.innerHTML += '<div style="position:fixed;top:0;left:0;right:0;background:red;color:white;z-index:99999;padding:20px;font-size:20px;">ERROR: ' + e.message + ' at ' + e.filename + ':' + e.lineno + '</div>';
+        });
+        window.addEventListener('unhandledrejection', function(e) {
+            document.body.innerHTML += '<div style="position:fixed;top:0;left:0;right:0;background:orange;color:white;z-index:99999;padding:20px;font-size:20px;">PROMISE REJECTION: ' + (e.reason ? e.reason.message : e.reason) + '</div>';
+        });
+    </script>
     <!-- App Icons -->
     <link rel="icon" type="image/png" href="./icon.png">
     <link rel="apple-touch-icon" href="./icon.png">
@@ -12,13 +20,58 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Leaflet Map -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=922">
     <link rel="manifest" href="manifest.json">
     <style>
         body { font-family: 'Inter', 'Noto Sans Sinhala', sans-serif; }
     </style>
 </head>
 <body class="deep-dark-theme">
+
+    <!-- Login Overlay -->
+    <div class="modal-overlay" id="login-overlay" style="z-index:10000; background:var(--bg-dark);">
+        <div class="glass-card" style="width:100%; max-width:400px; padding:40px 30px; text-align:center;">
+            <div class="logo" style="justify-content:center; margin-bottom:10px;">
+                <h2 style="font-size:2rem; display:flex; align-items:center; gap:10px;"><i data-lucide="chef-hat" class="logo-icon" style="width:40px;height:40px;color:var(--accent-cyan);"></i> Ju <span style="color:var(--accent-cyan);">pos</span></h2>
+            </div>
+            <h3 style="margin-bottom:30px; color:var(--text-secondary);">පද්ධතියට ඇතුල්වන්න (Login)</h3>
+            <form onsubmit="event.preventDefault(); if(window.App) App.handleLogin();">
+                <div class="form-group">
+                    <input type="password" id="login-pin" required placeholder="PIN අංකය" style="text-align:center; font-size:1.5rem; letter-spacing:8px; padding:15px;">
+                </div>
+                <button type="submit" class="neon-btn" style="width:100%; padding:15px; font-size:1.1rem; margin-top:10px; display:flex; justify-content:center;"><i data-lucide="log-in"></i> ඇතුල්වන්න</button>
+            </form>
+            <p style="margin-top:20px; font-size:0.85rem; color:var(--text-secondary);">පවතින ගිණුම්: <br>1234 (කළමනාකරු / Manager)<br>5678 (අයකැමි / Cashier)<br>0000 (කුස්සිය / Kitchen)</p>
+        </div>
+    </div>
+
+    <!-- Shift Modal -->
+    <div class="modal-overlay" id="shift-modal" style="z-index:9000;">
+        <div class="modal-content" style="max-width:400px;">
+            <div class="modal-header">
+                <h3 id="shift-title">මුදල් ලාච්චුව (Shift Management)</h3>
+            </div>
+            <div class="modal-body">
+                <div class="glass-card" style="background:rgba(0,0,0,0.3); padding:15px; margin-bottom:15px; text-align:center;" id="shift-status-card">
+                    <!-- Dynamic Shift Status -->
+                </div>
+                <form id="shift-form" onsubmit="event.preventDefault(); if(window.App) App.handleShiftSubmit();">
+                    <div class="form-group" id="shift-input-group">
+                        <label id="shift-input-label">ආරම්භක මුදල (Starting Float) රු.</label>
+                        <input type="number" id="shift-amount" min="0" step="0.5" required placeholder="0.00" style="font-size:1.5rem; font-weight:bold; text-align:right;">
+                    </div>
+                    <div class="form-group" id="shift-note-group" style="display:none;">
+                        <label>සටහන් / අඩුවීමක් තිබේනම් හේතුව</label>
+                        <input type="text" id="shift-note" placeholder="සටහන...">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="action-btn" id="shift-cancel-btn" onclick="if(window.App) App.handleLogout()" style="display:none;">පිටවෙන්න (Logout)</button>
+                <button type="button" class="neon-btn" style="margin-top:0; width:100%; justify-content:center;" onclick="if(window.App) App.handleShiftSubmit()" id="shift-submit-btn">ආරම්භ කරන්න</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Firebase Loading Overlay -->
     <div id="loader" style="position:fixed;inset:0;background:var(--bg-dark);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;">
@@ -46,6 +99,11 @@
                 <li data-tab="staff"><i data-lucide="users"></i> සේවක මණ්ඩලය (Staff)</li>
                 <li data-tab="credits"><i data-lucide="book-open"></i> පාරිභෝගික ණය (Credits)</li>
                 <li data-tab="catering"><i data-lucide="calendar"></i> උත්සව ඇණවුම් (Catering)</li>
+                <!-- Logout -->
+                <li id="logout-nav-btn" onclick="if(window.App) App.handleLogout()" style="margin-top:auto; border-top:1px solid var(--border-glass); padding-top:12px; color:var(--accent-danger); cursor:pointer; justify-content:space-between;">
+                    <span style="display:flex; align-items:center; gap:10px;"><i data-lucide="log-out"></i> Logout</span>
+                    <span id="logged-user-role" style="font-size:0.72rem; background:rgba(0,229,255,0.15); color:var(--accent-cyan); padding:2px 8px; border-radius:10px; font-weight:700;"></span>
+                </li>
             </ul>
             <div class="bottom-nav">
                 <div class="clock" id="live-clock">00:00:00</div>
@@ -321,6 +379,57 @@
         </div>
     </div>
 
+    <!-- Wastage / Adjustment Modal -->
+    <div class="modal-overlay" id="wastage-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>අපතේ යාම් / තොග ගැලපීම් (Wastage)</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <form id="wastage-form" onsubmit="event.preventDefault(); App.handleWastageSave();">
+                    <div class="form-group">
+                        <label>අංශය (Section) *</label>
+                        <select id="was-section" required onchange="if(window.App) App.handleWastageSectionChange()">
+                            <option value="raw_materials">අමුද්‍රව්‍ය (Raw Materials)</option>
+                            <option value="inventory">ගබඩාව/නිමි භාණ්ඩ (Inventory)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>අයිතමය (Item) *</label>
+                        <select id="was-rm" required onchange="if(window.App) App.handleWastageUnit()"><option value="">-- තෝරන්න --</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>හේතුව (Reason Type) *</label>
+                        <select id="was-type" required>
+                            <option value="processing">සකස් කිරීමකදී ඉවත් වූ (කිසිදු පාඩුවක් නොවේ - තොගය අඩුවේ)</option>
+                            <option value="loss">නරක් වීම / කල් ඉකුත් වීම (මූල්‍යමය පාඩුවකි මෙන්ම තොගයද අඩුවේ)</option>
+                            <option value="adjustment">තොග ගැලපීම (අතින් තොගය අඩු කිරීම)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="display:flex; gap:10px;">
+                        <div style="flex:2;">
+                            <label>ප්‍රමාණය (Quantity) *</label>
+                            <input type="number" id="was-qty" step="any" min="0.001" required placeholder="0">
+                        </div>
+                        <div style="flex:1;">
+                            <label>ඒකකය</label>
+                            <input type="text" id="was-unit" disabled style="background:var(--bg-dark);">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>විස්තර සටහන (Description)</label>
+                        <input type="text" id="was-desc" placeholder="උදා: මස් වල සම් / පොතු / කල් ඉකුත් වීම">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button type="button" class="neon-btn" style="margin-top:0; background:var(--accent-warning); color:#000;" onclick="App.handleWastageSave()">තොගයෙන් අඩු කරන්න</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Supplier Modal -->
     <div class="modal-overlay" id="supplier-modal">
         <div class="modal-content">
@@ -405,7 +514,15 @@
                     <input type="text" id="set-currency" value="රු.">
                 </div>
                 <input type="hidden" id="set-tax" value="0">
-                
+
+                <!-- Category Management -->
+                <h4 style="margin-top:20px; color:var(--accent-purple); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">🏷️ කෑම වර්ග (Menu Categories)</h4>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <input type="text" id="new-cat-name" placeholder="නව කාණ්ඩ නාමය..." style="flex:1; background:var(--bg-dark); border:1px solid var(--border-glass); color:var(--text-primary); padding:0.6rem; border-radius:6px; font-family:inherit; outline:none;">
+                    <button class="action-btn" style="border-color:var(--accent-purple); color:var(--accent-purple); white-space:nowrap;" onclick="if(window.App) App.handleAddCategory()"><i data-lucide="plus"></i> එකතු කරන්න</button>
+                </div>
+                <div id="category-list-settings" style="margin-top:10px; display:flex; flex-wrap:wrap; gap:8px;"></div>
+
                 <h4 style="margin-top:20px; color:var(--accent-success); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">📥 දත්ත (Data Management)</h4>
                 <div class="glass-card" style="padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-color:rgba(0,230,118,0.3);">
                     <div>
@@ -422,24 +539,56 @@
                     <button class="action-btn danger" style="white-space:nowrap;" onclick="App.fullDataReset()"><i data-lucide="trash-2"></i> Reset</button>
                 </div>
 
-                <h4 style="margin-top:20px; color:var(--accent-cyan); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">බාහිර උපාංග (Hardware Connections)</h4>
-                <div style="display:flex; flex-direction:column; gap:10px; margin-top:15px;">
-                    <div class="glass-card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <strong style="display:block;">බ්ලූටූත් ප්‍රින්ටරය (Bluetooth Thermal Printer)</strong>
-                            <small style="color:var(--text-secondary);">බිල්පත් මුද්‍රණය සඳහා</small>
-                        </div>
-                        <button class="action-btn" id="connect-bt-printer" style="border-color:var(--accent-cyan); color:var(--accent-cyan);" onclick="App.connectPrinter()"><i data-lucide="bluetooth"></i> සම්බන්ධ කරන්න</button>
-                    </div>
+                <h4 style="margin-top:20px; color:var(--accent-cyan); border-bottom:1px solid var(--border-glass); padding-bottom:5px;">&#x1F5A8;&#xFE0F; Hardware &amp; Shift</h4>
 
-                    <div class="glass-card" style="padding:10px; display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <strong style="display:block;">බාකෝඩ් ස්කෑනරය (Barcode Scanner - USB)</strong>
-                            <small style="color:var(--text-secondary);">භාණ්ඩ ස්කෑන් කිරීම සඳහා</small>
-                        </div>
-                        <button class="action-btn" id="connect-scanner" style="border-color:var(--accent-warning); color:var(--accent-warning);" onclick="App.connectScanner()"><i data-lucide="scan-line"></i> සක්‍රීය කරන්න</button>
+                <!-- Shift Control -->
+                <div class="glass-card" style="padding:12px; display:flex; justify-content:space-between; align-items:center; margin-top:12px; border-color:rgba(0,229,255,0.3);">
+                    <div>
+                        <strong id="shift-btn-label" style="display:block; color:var(--accent-cyan);">&#x23F0; Shift කළමනාකරණය</strong>
+                        <small id="shift-btn-info" style="color:var(--text-secondary);">දවස ආරම්භ / ඉවර කිරීම සහ Cash Drawer ශේෂ කිරීම</small>
+                    </div>
+                    <button class="action-btn" style="border-color:var(--accent-cyan); color:var(--accent-cyan); white-space:nowrap;" onclick="if(window.App) { document.getElementById('settings-modal').classList.remove('active'); App._openShiftModal(App.state.shiftOpen); }"><i data-lucide="clock"></i> Shift</button>
+                </div>
+
+                <!-- Printer -->
+                <div class="glass-card" style="padding:10px; margin-top:10px; border-color:rgba(0,229,255,0.2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span><strong>&#x1F5A8;&#xFE0F; රිසිට් ප්‍රින්ටරය (Receipt Printer)</strong></span>
+                        <span id="printer-status-badge" style="font-size:0.75rem; padding:3px 10px; background:rgba(255,51,102,0.2); color:var(--accent-danger); border-radius:20px; border:1px solid var(--accent-danger);">&#x274C; සම්බන්ධ නැත</span>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="action-btn" style="border-color:var(--accent-cyan); color:var(--accent-cyan); flex:1; justify-content:center;" onclick="if(window.App) App.connectPrinter('bluetooth')"><i data-lucide="bluetooth"></i> Bluetooth</button>
+                        <button class="action-btn" style="border-color:var(--accent-success); color:var(--accent-success); flex:1; justify-content:center;" onclick="if(window.App) App.connectPrinter('usb')"><i data-lucide="usb"></i> USB</button>
+                        <button class="action-btn" style="border-color:rgba(255,255,255,0.3); flex:1; justify-content:center;" onclick="if(window.App) App.testPrint()"><i data-lucide="printer"></i> Test</button>
                     </div>
                 </div>
+
+                <!-- Barcode Scanner -->
+                <div class="glass-card" style="padding:10px; margin-top:10px; border-color:rgba(255,167,38,0.2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span><strong>&#x1F4F7; Barcode Scanner</strong></span>
+                        <span id="scanner-status-badge" style="font-size:0.75rem; padding:3px 10px; background:rgba(255,51,102,0.2); color:var(--accent-danger); border-radius:20px; border:1px solid var(--accent-danger);">&#x274C; සම්බන්ධ නැත</span>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="action-btn" style="border-color:var(--accent-cyan); color:var(--accent-cyan); flex:1; justify-content:center;" onclick="if(window.App) App.connectScanner('bluetooth')"><i data-lucide="bluetooth"></i> Bluetooth</button>
+                        <button class="action-btn" style="border-color:var(--accent-success); color:var(--accent-success); flex:1; justify-content:center;" onclick="if(window.App) App.connectScanner('usb')"><i data-lucide="usb"></i> USB (HID)</button>
+                    </div>
+                    <small style="color:var(--text-secondary); display:block; margin-top:6px;">USB Scanner: HID Keyboard Mode ට set කර POS View හිදී scan කරන්න.</small>
+                </div>
+
+                <!-- Cash Drawer -->
+                <div class="glass-card" style="padding:10px; margin-top:10px; border-color:rgba(0,230,118,0.2);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <span><strong>&#x1F4B0; මුදල් ලාච්චුව (Cash Drawer)</strong></span>
+                        <span id="drawer-status-badge" style="font-size:0.75rem; padding:3px 10px; background:rgba(255,51,102,0.2); color:var(--accent-danger); border-radius:20px; border:1px solid var(--accent-danger);">&#x274C; සම්බන්ධ නැත</span>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="action-btn" style="border-color:var(--accent-success); color:var(--accent-success); flex:1; justify-content:center;" onclick="if(window.App) App.connectDrawer('usb')"><i data-lucide="usb"></i> USB (Printer හරහා)</button>
+                        <button class="action-btn" style="border-color:var(--accent-warning); color:var(--accent-warning); flex:1; justify-content:center;" onclick="if(window.App) App.openDrawer()"><i data-lucide="square-arrow-out-up-right"></i> Open Drawer</button>
+                    </div>
+                    <small style="color:var(--text-secondary); display:block; margin-top:6px;">Drawer ගොනු Printer ESC/POS CMD හරහා ක්‍රියා කරේ.</small>
+                </div>
+
             </div>
             <div class="modal-footer">
                 <button class="action-btn close-modal-btn">අවලංගු කරන්න</button>
@@ -678,7 +827,7 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>ගනුදෙනුකරු *</label>
-                    <select id="ln-cust"><option value="">— ගනුදෙනුකරු තෝරන්න —</option></select>
+                    <select id="ln-cust"><option value="">� ගනුදෙනුකරු තෝරන්න �</option></select>
                 </div>
                 <input type="hidden" id="ln-id">
                 <div class="form-group">
@@ -780,7 +929,7 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                         <div style="flex:2;">
                             <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:2px;">📍 ස්ථානය</div>
-                            <div id="delivery-loc-name" style="font-weight:600; color:var(--text-primary); font-size:0.85rem;">—</div>
+                            <div id="delivery-loc-name" style="font-weight:600; color:var(--text-primary); font-size:0.85rem;">�</div>
                         </div>
                         <div style="text-align:center; flex:1;">
                             <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:2px;">📐 දුර</div>
@@ -869,11 +1018,11 @@
             localStorage.setItem('ju_pos_data_wiped_clean_p1', 'true');
         }
     </script>
-    <script src="db.js?v=914"></script>
-    <script src="app.js?v=914"></script>
+    <script src="db.js?v=926"></script>
+    <script src="app.js?v=928"></script>
     <script>
         // Init Lucide icons initially
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
 
         // Force clear old Service Workers to fix caching issues
         if ('serviceWorker' in navigator) {

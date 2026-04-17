@@ -15,7 +15,11 @@ const DEFAULT_TABLES = [
 
 const INITIAL_DATA = {
     categories: [
-        { id: 'all', name: 'සියල්ල (All)' }
+        { id: 'all', name: 'සියල්ල (All)' },
+        { id: 'mains', name: 'ප්‍රධාන ආහාර (Mains)' },
+        { id: 'drinks', name: 'බීම වර්ග (Drinks)' },
+        { id: 'short_eats', name: 'කෙටි ආහාර (Short Eats)' },
+        { id: 'desserts', name: 'අතුරුපස (Desserts)' }
     ],
     products: [],
     tables: [...DEFAULT_TABLES],
@@ -55,6 +59,7 @@ class Database {
         if (!this.data.purchases) this.data.purchases = {};
         if (!this.data.caterings) this.data.caterings = {};
         if (!this.data.action_logs) this.data.action_logs = {};
+        if (!this.data.wastages) this.data.wastages = {};
 
         this.localOrders = Array.isArray(this.data.orders) ? this.data.orders : Object.values(this.data.orders || {});
         this.localExpenses = Array.isArray(this.data.expenses) ? this.data.expenses : Object.values(this.data.expenses || {});
@@ -67,6 +72,7 @@ class Database {
         this.localPurchases = Object.values(this.data.purchases || {});
         this.localCaterings = Object.values(this.data.caterings || {});
         this.localActionLogs = Object.values(this.data.action_logs || {});
+        this.localWastages = Object.values(this.data.wastages || {});
     }
 
     async init() {
@@ -98,6 +104,7 @@ class Database {
                 cloudData.suppliers = cloudData.suppliers || {};
                 cloudData.purchases = cloudData.purchases || {};
                 cloudData.caterings = cloudData.caterings || {};
+                cloudData.wastages = cloudData.wastages || {};
 
                 this.localOrders = Object.values(cloudData.orders);
                 this.localExpenses = Object.values(cloudData.expenses);
@@ -109,6 +116,7 @@ class Database {
                 this.localSuppliers = Object.values(cloudData.suppliers);
                 this.localPurchases = Object.values(cloudData.purchases);
                 this.localCaterings = Object.values(cloudData.caterings);
+                this.localWastages = Object.values(cloudData.wastages);
 
                 this.data = cloudData;
                 localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
@@ -116,7 +124,7 @@ class Database {
             // Flush any pending offline writes now that we're online
             await this.flushOfflineQueue();
         } catch(e) {
-            console.warn("Offline/Cloud error — using locally cached data.", e.message);
+            console.warn("Offline/Cloud error � using locally cached data.", e.message);
         }
     }
 
@@ -190,8 +198,8 @@ class Database {
                 this.data.suppliers = mergedSup;
                 this.localSuppliers = Object.values(mergedSup);
 
-                const cloudPur = cloudData.purchases || {};
-                const mergedPur = { ...( this.data.purchases || {} ), ...cloudPur };
+                const cloudPurchases = cloudData.purchases || {};
+                const mergedPur = { ...( this.data.purchases || {} ), ...cloudPurchases };
                 this.data.purchases = mergedPur;
                 this.localPurchases = Object.values(mergedPur);
 
@@ -199,6 +207,11 @@ class Database {
                 const mergedCaterings = { ...( this.data.caterings || {} ), ...cloudCaterings };
                 this.data.caterings = mergedCaterings;
                 this.localCaterings = Object.values(mergedCaterings);
+
+                const cloudWastages = cloudData.wastages || {};
+                const mergedWastages = { ...( this.data.wastages || {} ), ...cloudWastages };
+                this.data.wastages = mergedWastages;
+                this.localWastages = Object.values(mergedWastages);
 
                 // Settings & Products: use cloud if set, else keep local
                 if (cloudData.settings) this.data.settings = cloudData.settings;
@@ -211,7 +224,7 @@ class Database {
                 }
             }
         } catch(e) {
-            // offline — silent fail
+            // offline � silent fail
         }
     }
 
@@ -231,7 +244,7 @@ class Database {
             });
             if (!res.ok) throw new Error('HTTP ' + res.status);
         } catch (e) {
-            // Network failed — queue for retry
+            // Network failed � queue for retry
             this._queueWrite(path, payload, method);
         }
     }
@@ -288,13 +301,13 @@ class Database {
 
     _startOnlineListener() {
         window.addEventListener('online', async () => {
-            console.log('[Network] Back online — flushing queue...');
+            console.log('[Network] Back online � flushing queue...');
             await this.flushOfflineQueue();
             await this.poll();
-            if (window.App) window.App.showToast('🌐 Online — Data synced!', 'success');
+            if (window.App) window.App.showToast('🌐 Online � Data synced!', 'success');
         });
         window.addEventListener('offline', () => {
-            if (window.App) window.App.showToast('📴 Offline mode — data saved locally', 'warning');
+            if (window.App) window.App.showToast('📴 Offline mode � data saved locally', 'warning');
         });
     }
 
@@ -302,8 +315,9 @@ class Database {
 
     /* Products */
     getProducts(category = 'all') {
-        if (category === 'all') return this.data.products;
-        return this.data.products.filter(p => p.category === category);
+        const prods = this.data.products || [];
+        if (category === 'all') return prods;
+        return prods.filter(p => p.category === category);
     }
 
     addProduct(product) {
@@ -325,8 +339,35 @@ class Database {
     }
 
     /* Categories & Settings */
-    getCategories() { return this.data.categories; }
-    
+    getCategories() {
+        if (this.data.categories && this.data.categories.length === 1 && this.data.categories[0].id === 'all') {
+            this.data.categories = [
+                { id: 'all', name: 'සියල්ල (All)' },
+                { id: 'mains', name: 'ප්‍රධාන ආහාර (Mains)' },
+                { id: 'drinks', name: 'බීම වර්ග (Drinks)' },
+                { id: 'short_eats', name: 'කෙටි ආහාර (Short Eats)' },
+                { id: 'desserts', name: 'අතුරුපස (Desserts)' }
+            ];
+            
+            this.pushToCloud('categories', this.data.categories);
+        }
+        return this.data.categories || [];
+    }
+
+    saveCategory(cat) {
+        if (!Array.isArray(this.data.categories)) this.data.categories = [];
+        this.data.categories.push(cat);
+        
+        this.pushToCloud('categories', this.data.categories);
+    }
+
+    deleteCategory(catId) {
+        if (catId === 'all') return; // cannot delete All
+        this.data.categories = this.data.categories.filter(c => c.id !== catId);
+        
+        this.pushToCloud('categories', this.data.categories);
+    }
+
     saveSettings(settings) {
         this.data.settings = settings;
         this.pushToCloud('settings', this.data.settings);
@@ -607,6 +648,48 @@ class Database {
         this.pushToCloud(`caterings/${id}`, null, 'DELETE');
     }
 
+    /* ---- WASTAGES / ADJUSTMENTS ---- */
+    getWastages() { return this.localWastages; }
+    saveWastage(was) {
+        if(!this.data.wastages) this.data.wastages = {};
+        was.id = 'was_' + Date.now();
+        this.data.wastages[was.id] = was;
+        this.localWastages.push(was);
+        this.pushToCloud(`wastages/${was.id}`, was);
+        
+        // Deduct from Stock safely based on itemType
+        if(was.itemType === 'inventory') {
+            const arr = Array.isArray(this.data.products) ? this.data.products : Object.values(this.data.products || {});
+            const idx = arr.findIndex(p => p.id === was.rawMaterialId);
+            if(idx !== -1) {
+                arr[idx].stock = (arr[idx].stock || 0) - was.qty;
+                const cloudKey = Array.isArray(this.data.products) ? idx : was.rawMaterialId;
+                this.pushToCloud(`products/${cloudKey}/stock`, arr[idx].stock);
+                if(!Array.isArray(this.data.products) && this.data.products[was.rawMaterialId]) {
+                    this.data.products[was.rawMaterialId].stock = arr[idx].stock;
+                }
+            }
+        } else {
+            if(this.data.raw_materials && this.data.raw_materials[was.rawMaterialId]) {
+                this.data.raw_materials[was.rawMaterialId].stock -= was.qty;
+                const rmIdx = this.localRawMaterials.findIndex(r => r.id === was.rawMaterialId);
+                if(rmIdx !== -1) this.localRawMaterials[rmIdx].stock = this.data.raw_materials[was.rawMaterialId].stock;
+                this.pushToCloud(`raw_materials/${was.rawMaterialId}/stock`, this.data.raw_materials[was.rawMaterialId].stock);
+            }
+        }
+        return was.id;
+    }
+
+    /* ---- SHIFT RECORDS ---- */
+    getShiftRecords() { return Object.values(this.data.shift_records || {}); }
+    saveShiftRecord(rec) {
+        if (!this.data.shift_records) this.data.shift_records = {};
+        rec.id = 'shift_' + Date.now();
+        this.data.shift_records[rec.id] = rec;
+        this.pushToCloud(`shift_records/${rec.id}`, rec);
+        localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
+    }
+
     /* Metrics with Expense & Discounts */
     getMetrics(startDate = new Date(), endDate = new Date()) {
         const start = new Date(startDate);
@@ -634,6 +717,15 @@ class Database {
                  }
               });
            }
+        });
+        
+        // Collect Wastage Loss (Spoiled items)
+        let wastageLoss = 0;
+        this.localWastages.forEach(w => {
+            const dt = new Date(w.timestamp);
+            if(dt >= start && dt <= end && w.type === 'loss') {
+                wastageLoss += (w.cost * w.qty);
+            }
         });
         
         let cogs = 0;
@@ -669,7 +761,8 @@ class Database {
             totalTables: this.data.tables.length,
             totalExpenses,
             cogs,
-            profit
+            profit,
+            wastageLoss // <- injected into metrics
         };
     }
 

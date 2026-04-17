@@ -11,7 +11,10 @@ class AppCore {
             serviceCharge: { val: 0, type: 'amount' },
             deliveryCharge: 0,
             deliveryLocation: null,  // { lat, lng, name, distance }
-            reportDateRange: 'today'
+            reportDateRange: 'today',
+            role: null,
+            shiftOpen: false,
+            shiftStartFloat: 0
         };
         
         this.elements = {
@@ -32,11 +35,176 @@ class AppCore {
         this.init();
     }
 
+    /* PINS: configure here */
+    _ROLES() { return { '1234': 'manager', '5678': 'cashier', '0000': 'kitchen' }; }
+
     init() {
         this.startClock();
         this.bindEvents();
-        this.renderView();
-        this.updateCartUI();
+        this._restoreSession();
+    }
+
+    _restoreSession() {
+        const saved = sessionStorage.getItem('pos_session');
+        if (saved) {
+            try {
+                const s = JSON.parse(saved);
+                if (s.role) {
+                    this.state.role = s.role;
+                    this.state.shiftOpen = s.shiftOpen || false;
+                    this.state.shiftStartFloat = s.shiftStartFloat || 0;
+                    this._applyRoleUI();
+                    document.getElementById('login-overlay').classList.remove('active');
+                    this.renderView();
+                    this.updateCartUI();
+                    return;
+                }
+            } catch(e) {}
+        }
+        // No valid session — show login
+        document.getElementById('login-overlay').classList.add('active');
+    }
+
+    handleLogin() {
+        const pin = document.getElementById('login-pin').value.trim();
+        const role = this._ROLES()[pin];
+        if (!role) {
+            document.getElementById('login-pin').value = '';
+            this.showToast('වරද් PIN! නැවත උත්සාහ කරන්න.', 'error');
+            return;
+        }
+        this.state.role = role;
+
+        // Recover shift state if same role had an open shift
+        try {
+            const saved = JSON.parse(sessionStorage.getItem('pos_session') || '{}');
+            if (saved.role === role && saved.shiftOpen) {
+                this.state.shiftOpen = true;
+                this.state.shiftStartFloat = saved.shiftStartFloat || 0;
+            }
+        } catch(e) {}
+
+        sessionStorage.setItem('pos_session', JSON.stringify({ role, shiftOpen: this.state.shiftOpen, shiftStartFloat: this.state.shiftStartFloat }));
+        document.getElementById('login-overlay').classList.remove('active');
+        document.getElementById('login-pin').value = '';
+        this._applyRoleUI();
+        this.showToast('ස්වාගතයි! ' + role.toUpperCase() + ' ලෙස ඇතුල් විය.', 'success');
+        if (role === 'kitchen') {
+            this.state.currentTab = 'kitchen';
+            this.renderView();
+            this.updateCartUI();
+        } else {
+                        this._openShiftModal(false);
+        }
+    }
+
+    handleLogout() {
+        sessionStorage.removeItem('pos_session');
+        this.state.role = null;
+        this.state.shiftOpen = false;
+        document.getElementById('login-overlay').classList.add('active');
+        document.getElementById('shift-modal').classList.remove('active');
+    }
+
+    _applyRoleUI() {
+        const role = this.state.role;
+        const roleEl = document.getElementById('logged-user-role');
+        if (roleEl) roleEl.textContent = role === 'manager' ? '\uD83D\uDC51 Manager' : role === 'cashier' ? '\uD83D\uDCB3 Cashier' : '\uD83C\uDF73 Kitchen';
+        
+        let firstTabSet = false;
+        document.querySelectorAll('.nav-links li').forEach(li => {
+            const tab = li.dataset.tab;
+            if (!tab) {
+                li.style.display = '';
+                return;
+            }
+            if (role === 'kitchen') {
+                li.style.display = (tab === 'kitchen') ? '' : 'none';
+                if (tab === 'kitchen' && !firstTabSet) { this.state.currentTab = 'kitchen'; firstTabSet = true; }
+            } else if (role === 'cashier') {
+                const hiddenTabsForCashier = ['dashboard', 'reports', 'inventory', 'raw-materials', 'suppliers', 'staff'];
+                const isHidden = hiddenTabsForCashier.includes(tab);
+                li.style.display = isHidden ? 'none' : '';
+                if (!isHidden && !firstTabSet && this.state.currentTab === 'dashboard') {
+                    this.state.currentTab = 'pos'; firstTabSet = true;
+                }
+            } else {
+                li.style.display = '';
+            }
+        });
+        
+        if (role === 'kitchen' && this.state.currentTab !== 'kitchen') {
+            this.state.currentTab = 'kitchen';
+        }
+
+        const settingsBtn = document.getElementById('settings-btn');
+        if (settingsBtn) settingsBtn.style.display = (role === 'manager') ? '' : 'none';
+    }
+
+    /* ====== SHIFT MANAGEMENT ====== */
+    _openShiftModal(isEnd) {
+        const today = new Date().toLocaleDateString('si-LK');
+        const statusCard = document.getElementById('shift-status-card');
+        const noteGroup  = document.getElementById('shift-note-group');
+        const submitBtn  = document.getElementById('shift-submit-btn');
+        const cancelBtn  = document.getElementById('shift-cancel-btn');
+        const titleEl    = document.getElementById('shift-title');
+        const labelEl    = document.getElementById('shift-input-label');
+
+        if (isEnd || this.state.shiftOpen) {
+            titleEl.textContent  = 'Shift ඉවර කරන්න (End Shift)';
+            labelEl.textContent  = 'ලාච්චුවේ ඇති මුදල (Actual Cash) රු.';
+            noteGroup.style.display = '';
+            submitBtn.textContent = 'Shift ඉවර කරන්න';
+            cancelBtn.style.display = '';
+            const dates = this.getReportDates('today');
+            const m = db.getMetrics(dates.start, dates.end);
+            const expected = this.state.shiftStartFloat + (m.cashRevenue || 0);
+            statusCard.innerHTML = `
+            <h4 style="color:var(--accent-cyan); margin-bottom:10px;">දවසේ සාරාංශය | ${today}</h4>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; font-size:0.9rem;">
+              <div><small style="color:var(--text-secondary)">ආරම්භක Float</small><br><b style="color:var(--accent-cyan);">රු. ${this.state.shiftStartFloat.toLocaleString()}</b></div>
+              <div><small style="color:var(--text-secondary)">Cash ආදායම</small><br><b style="color:var(--accent-success);">රු. ${(m.cashRevenue||0).toLocaleString()}</b></div>
+              <div><small style="color:var(--text-secondary)">ඉලක්කම (Expected)</small><br><b style="color:#fff;">රු. ${Math.round(expected).toLocaleString()}</b></div>
+            </div>`;
+        } else {
+            titleEl.textContent  = 'Shift ආරම්භ කරන්න';
+            labelEl.textContent  = 'ආරම්භක මුදල (Starting Float) රු.';
+            noteGroup.style.display = 'none';
+            submitBtn.textContent = 'Shift ආරම්භ කරන්න';
+            cancelBtn.style.display = 'none';
+            statusCard.innerHTML = `<p style="color:var(--text-secondary); font-size:0.9rem;">${today} | ලාච්චුවේ ආරම්භක මුදල ඇතුල් කරන්න.</p>`;
+        }
+        document.getElementById('shift-amount').value = '';
+        document.getElementById('shift-modal').classList.add('active');
+    }
+
+    handleShiftSubmit() {
+        const amount = parseFloat(document.getElementById('shift-amount').value);
+        const note   = document.getElementById('shift-note') ? document.getElementById('shift-note').value.trim() : '';
+        if (isNaN(amount) || amount < 0) return this.showToast('මුදල නිවැරදිව ලබාදෙන්න!', 'error');
+
+        if (this.state.shiftOpen) {
+            const dates    = this.getReportDates('today');
+            const m        = db.getMetrics(dates.start, dates.end);
+            const expected = this.state.shiftStartFloat + (m.cashRevenue || 0);
+            const diff     = amount - expected;
+            const status   = diff >= 0 ? ('අතිරේකය රු. ' + Math.abs(diff).toFixed(2)) : ('හිඟය රු. ' + Math.abs(diff).toFixed(2));
+            db.saveShiftRecord({ type:'end', float: this.state.shiftStartFloat, actualCash: amount, expected, diff, note, cashRevenue: m.cashRevenue, timestamp: new Date().toISOString(), role: this.state.role });
+            this.state.shiftOpen = false;
+            sessionStorage.setItem('pos_session', JSON.stringify({ role: this.state.role, shiftOpen: false, shiftStartFloat: 0 }));
+            this.showToast('Shift ඉවරයි! ' + status, diff >= 0 ? 'success' : 'warning');
+            document.getElementById('shift-modal').classList.remove('active');
+        } else {
+            db.saveShiftRecord({ type:'start', float: amount, timestamp: new Date().toISOString(), role: this.state.role });
+            this.state.shiftOpen    = true;
+            this.state.shiftStartFloat = amount;
+            sessionStorage.setItem('pos_session', JSON.stringify({ role: this.state.role, shiftOpen: true, shiftStartFloat: amount }));
+            this.showToast('Shift ආරම්භ! Float: රු. ' + amount.toLocaleString(), 'success');
+            document.getElementById('shift-modal').classList.remove('active');
+            this.renderView();
+            this.updateCartUI();
+        }
     }
 
     startClock() {
@@ -111,7 +279,8 @@ class AppCore {
             document.getElementById('set-tax').value = settings.taxRate || 0;
             document.getElementById('set-currency').value = settings.currency || 'රු.';
             document.getElementById('settings-modal').classList.add('active');
-            requestAnimationFrame(() => lucide.createIcons());
+            this.renderCategorySettingsList();
+            requestAnimationFrame(() => { if(window.lucide) lucide.createIcons(); });
         });
 
         // Discount Triggers
@@ -206,7 +375,7 @@ class AppCore {
         let icon = type === 'success' ? 'check-circle' : (type==='warning'?'alert-triangle':'alert-circle');
         toast.innerHTML = `<i data-lucide="${icon}"></i> <span>${message}</span>`;
         container.appendChild(toast);
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
 
         setTimeout(() => {
             toast.style.animation = 'fadeOut 0.3s forwards';
@@ -214,7 +383,219 @@ class AppCore {
         }, 3000);
     }
 
+    /* ============================
+       HARDWARE MANAGEMENT
+    ============================*/
+    _hw = {
+        printer: { device: null, type: null },   // type: 'bluetooth' | 'usb'
+        scanner: { device: null, type: null },
+        drawer:  { device: null, type: null }
+    };
+
+    _setBadge(id, connected, label) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (connected) {
+            el.style.background = 'rgba(0,230,118,0.15)';
+            el.style.color = 'var(--accent-success)';
+            el.style.borderColor = 'var(--accent-success)';
+            el.textContent = '\u2705 ' + label;
+        } else {
+            el.style.background = 'rgba(255,51,102,0.2)';
+            el.style.color = 'var(--accent-danger)';
+            el.style.borderColor = 'var(--accent-danger)';
+            el.textContent = '\u274C \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0db0 \u0db1\u0dd0\u0dad';
+        }
+    }
+
+    /* --- PRINTER --- */
+    async connectPrinter(mode) {
+        if (mode === 'bluetooth') {
+            if (!navigator.bluetooth) return this.showToast('\u0db8\u0dd9\u0db8 Browser \u0dba\u0dad Bluetooth support \u0db1\u0dd0\u0dad. Chrome/Edge \u0db4\u0dbb\u0dd2\u0dc1\u0dd2\u0dbd\u0db1\u0dca\u0db1.', 'error');
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb', '1812', 'battery_service']
+                });
+                const server = await device.gatt.connect();
+                this._hw.printer.device = server;
+                this._hw.printer.type   = 'bluetooth';
+                this._hw.printer.name   = device.name;
+                this._setBadge('printer-status-badge', true, device.name || 'BT Printer');
+                this.showToast('\u0db4\u0dca\u200d\u0dbb\u0dd2\u0db1\u0dca\u0da7\u0dbb\u0dba Bluetooth \u0dc4\u0dbb\u0dc4\u0dcf \u0dc3\u0db6 \u0dc0\u0dd2\u0dba!', 'success');
+            } catch(e) {
+                this.showToast('Bluetooth \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0d85\u0dc3\u0db8\u0dca\u0db8\u0dad \u0dc0\u0dd2\u0dba: ' + e.message, 'error');
+            }
+        } else {
+            if (!navigator.usb) return this.showToast('Web USB support \u0db1\u0dd0\u0dad. Chrome/Edge PC \u0db4\u0dbb\u0dd2\u0dc1\u0dd2\u0dbd\u0db1\u0dca\u0db1.', 'error');
+            try {
+                const device = await navigator.usb.requestDevice({ filters: [] });
+                await device.open();
+                if (device.configuration === null) await device.selectConfiguration(1);
+                await device.claimInterface(0);
+                this._hw.printer.device = device;
+                this._hw.printer.type   = 'usb';
+                this._hw.printer.name   = device.productName || 'USB Printer';
+                this._setBadge('printer-status-badge', true, device.productName || 'USB Printer');
+                this._setBadge('drawer-status-badge', true, 'Printer \u0dc4\u0dbb\u0dc4\u0dcf');
+                this._hw.drawer.device  = device;
+                this._hw.drawer.type    = 'usb';
+                this.showToast('USB \u0db4\u0dca\u200d\u0dbb\u0dd2\u0db1\u0dca\u0da7\u0dbb\u0dba \u0dc4\u0dbb\u0dd4 Cash Drawer \u0dc3\u0db6 \u0dc0\u0dd2\u0dba!', 'success');
+            } catch(e) {
+                this.showToast('USB \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0d85\u0dc3\u0db8\u0dca\u0db8\u0dad: ' + e.message, 'error');
+            }
+        }
+    }
+
+    /* ESC/POS raw bytes helper */
+    _escposBytes(lines) {
+        const ESC = 0x1B, GS = 0x1D;
+        const enc = new TextEncoder();
+        let chunks = [];
+        // Initialize + cut
+        chunks.push(new Uint8Array([ESC, 0x40])); // ESC @ reset
+        chunks.push(new Uint8Array([ESC, 0x61, 0x01])); // center align
+        for (const ln of lines) {
+            if (ln === '---') {
+                chunks.push(enc.encode('-'.repeat(32) + '\n'));
+            } else {
+                chunks.push(enc.encode(ln + '\n'));
+            }
+        }
+        chunks.push(new Uint8Array([ESC, 0x61, 0x00])); // left align
+        chunks.push(new Uint8Array([GS, 0x56, 0x42, 0x10])); // partial cut
+        let total = chunks.reduce((s, c) => s + c.length, 0);
+        let buf = new Uint8Array(total), off = 0;
+        for (const c of chunks) { buf.set(c, off); off += c.length; }
+        return buf;
+    }
+
+    async _sendToPrinter(bytes) {
+        const hw = this._hw.printer;
+        if (!hw.device) return false;
+        try {
+            if (hw.type === 'bluetooth') {
+                // Try common ESC/POS BLE characteristic
+                const svc = (await hw.device.getPrimaryServices())[0];
+                const char = (await svc.getCharacteristics()).find(c => c.properties.writeWithoutResponse || c.properties.write);
+                if (!char) throw new Error('No writable characteristic found');
+                const CHUNK = 512;
+                for (let i = 0; i < bytes.length; i += CHUNK) {
+                    await char.writeValueWithoutResponse ? char.writeValueWithoutResponse(bytes.slice(i, i + CHUNK)) : char.writeValue(bytes.slice(i, i + CHUNK));
+                }
+            } else {
+                await hw.device.transferOut(1, bytes);
+            }
+            return true;
+        } catch(e) {
+            this.showToast('Print \u0d85\u0dc3\u0db8\u0dca\u0db8\u0dad: ' + e.message, 'error');
+            return false;
+        }
+    }
+
+    async testPrint() {
+        if (!this._hw.printer.device) return this.showToast('\u0db4\u0dca\u200d\u0dbb\u0dd2\u0db1\u0dca\u0da7\u0dbb\u0dba \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0d9a\u0dbb\u0db1\u0dca\u0db1!', 'error');
+        const bytes = this._escposBytes([
+            'Sobamin Hotel POS', '---',
+            'TEST PRINT', new Date().toLocaleString('si-LK'), '---', ' '
+        ]);
+        const ok = await this._sendToPrinter(bytes);
+        if (ok) this.showToast('Test print \u0dc3\u0dcf\u0dbb\u0dca\u0dad\u0d9a\u0dc0\u0dba\u0dd2!', 'success');
+    }
+
+    /* --- BARCODE SCANNER --- */
+    async connectScanner(mode) {
+        if (mode === 'bluetooth') {
+            if (!navigator.bluetooth) return this.showToast('Bluetooth API \u0db1\u0dd0\u0dad.', 'error');
+            try {
+                const device = await navigator.bluetooth.requestDevice({
+                    acceptAllDevices: true,
+                    optionalServices: ['1812']
+                });
+                await device.gatt.connect();
+                this._hw.scanner.device = device;
+                this._hw.scanner.type   = 'bluetooth';
+                this._setBadge('scanner-status-badge', true, device.name || 'BT Scanner');
+                this.showToast('BT Scanner සම්බන්ධ විය! HID mode එක භාවිතා කරන්න. Keyboard හරහා Barcode කියවෙනවා.', 'success');
+                this._startBarcodeCapture();
+            } catch(e) {
+                this.showToast('BT Scanner \u0d85\u0dc3\u0db8\u0dca\u0db8\u0dad: ' + e.message, 'error');
+            }
+        } else {
+            // USB HID scanner simulates keyboard — just enable capture mode
+            this._hw.scanner.type = 'usb-hid';
+            this._setBadge('scanner-status-badge', true, 'USB HID Scanner');
+            this.showToast('USB Scanner \u0dc3\u0d9a\u0dca\u200d\u0dbb\u0dd3\u0dba! POS View \u0dc4\u0dd2 Barcode \u0dc3\u0dca\u0d9a\u0dd0\u0db1\u0dca \u0d9a\u0dbb\u0db1\u0dca\u0db1.', 'success');
+            this._startBarcodeCapture();
+        }
+    }
+
+    _barcodeBuffer = '';
+    _barcodeTimer  = null;
+    _startBarcodeCapture() {
+        if (this._bcListenerAttached) return;
+        this._bcListenerAttached = true;
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && this._barcodeBuffer.length > 2) {
+                this._handleBarcodeInput(this._barcodeBuffer.trim());
+                this._barcodeBuffer = '';
+                clearTimeout(this._barcodeTimer);
+                return;
+            }
+            if (e.key.length === 1) {
+                this._barcodeBuffer += e.key;
+                clearTimeout(this._barcodeTimer);
+                this._barcodeTimer = setTimeout(() => { this._barcodeBuffer = ''; }, 200);
+            }
+        });
+    }
+
+    _handleBarcodeInput(code) {
+        // Try to match barcode with product barcode/id
+        const product = db.getProducts('all').find(p => p.barcode === code || p.id === code);
+        if (product) {
+            this.addToCart(product);
+            this.showToast('\u0dc3\u0dca\u0d9a\u0dd0\u0db1\u0dca: ' + product.name, 'success');
+        } else {
+            this.showToast('Barcode \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0db1\u0dd0\u0dad: ' + code, 'warning');
+        }
+    }
+
+    /* --- CASH DRAWER --- */
+    async connectDrawer(mode) {
+        if (mode === 'usb') {
+            // Drawer connects via printer USB — same device
+            if (this._hw.printer.device && this._hw.printer.type === 'usb') {
+                this._hw.drawer.device = this._hw.printer.device;
+                this._hw.drawer.type   = 'usb';
+                this._setBadge('drawer-status-badge', true, 'USB Drawer');
+                this.showToast('Cash Drawer Printer \u0dc4\u0dbb\u0dc4\u0dcf \u0dc3\u0db6 \u0dc0\u0dd2\u0dba!', 'success');
+            } else {
+                this.showToast('\u0db4\u0dca\u200d\u0dbb\u0dd2\u0db1\u0dca\u0da7\u0dbb\u0dba USB \u0dc4\u0dbb\u0dc4\u0dcf \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0d9a\u0dbb\u0db1\u0dca\u0db1! Drawer Printer \u0d87\u0d9a\u0dd2\u0dbd\u0dd2\u0db1\u0dca \u0dc4\u0dbb\u0dc4\u0dcf \u0d9c\u0dc1\u0dd2\u0dba\u0dc0\u0dd0\u0dba\u0dd2.', 'warning');
+            }
+        }
+    }
+
+    async openDrawer() {
+        const hw = this._hw.drawer;
+        if (!hw.device) return this.showToast('Cash Drawer \u0dc3\u0db8\u0dca\u0db6\u0db1\u0dca\u0da7 \u0d9a\u0dbb\u0db1\u0dca\u0db1!', 'error');
+        // ESC/POS cash drawer open: ESC p 0 25 250
+        const cmd = new Uint8Array([0x1B, 0x70, 0x00, 0x19, 0xFA]);
+        try {
+            if (hw.type === 'usb') {
+                await hw.device.transferOut(1, cmd);
+                this.showToast('\u0dbd\u0dcf\u0da0\u0dca\u0da0\u0dd4\u0dc0 \u0d87\u0dbb\u0dd2\u0dad\u0dd4!', 'success');
+            } else if (hw.type === 'bluetooth') {
+                await this._sendToPrinter(cmd);
+                this.showToast('\u0dbd\u0dcf\u0da0\u0dca\u0da0\u0dd4\u0dc0 \u0d87\u0dbb\u0dd2\u0dad\u0dd4!', 'success');
+            }
+        } catch(e) {
+            this.showToast('Drawer \u0d87\u0dbb\u0dd2\u0dad\u0dca\u0dad\u0dd0 \u0dc0\u0dd2\u0dba \u0db1\u0dd0\u0dad: ' + e.message, 'error');
+        }
+    }
+
     /* ---- DELIVERY MAP ---- */
+
     haversineDistance(lat1, lng1, lat2, lng2) {
         const R = 6371;
         const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -227,7 +608,7 @@ class AppCore {
         const HOTEL_LAT = 7.75889, HOTEL_LNG = 80.5683, RATE = 200;
         const modal = document.getElementById('delivery-map-modal');
         modal.classList.add('active');
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
 
         const initMap = (startLat, startLng, isGPS) => {
             // Satellite tiles - maxNativeZoom:19 + maxZoom:21 fixes tile load at high zoom
@@ -373,6 +754,47 @@ class AppCore {
         this.updateCartUI();
     }
 
+    /* ---- CATEGORY MANAGEMENT ---- */
+    handleAddCategory() {
+        const input = document.getElementById('new-cat-name');
+        const name = input ? input.value.trim() : '';
+        if (!name) return this.showToast('කාණ්ඩ නාමයක් ඇතුල් කරන්න', 'error');
+        const exists = db.getCategories().some(c => c.name.toLowerCase() === name.toLowerCase());
+        if (exists) return this.showToast('එම නාමයේ කාණ්ඩය දැනතමත් ඇත!', 'error');
+        const id = 'cat_' + Date.now();
+        db.saveCategory({ id, name });
+        if (input) input.value = '';
+        this.renderCategorySettingsList();
+        this.showToast('"' + name + '" කාණ්ඩය සාර්තකව එකතු කරන ලදි!', 'success');
+    }
+
+    handleDeleteCategory(catId) {
+        const cat = db.getCategories().find(c => c.id === catId);
+        if (!cat) return;
+        if (!confirm('"' + cat.name + '" කාණ්ඩය Delete කරන්නද?')) return;
+        db.deleteCategory(catId);
+        this.renderCategorySettingsList();
+        this.showToast('කාණ්ඩය ඉවත් කරන ලදි', 'success');
+    }
+
+    renderCategorySettingsList() {
+        const el = document.getElementById('category-list-settings');
+        if (!el) return;
+        const cats = db.getCategories();
+        el.innerHTML = '';
+        cats.forEach(cat => {
+            const badge = document.createElement('div');
+            badge.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:rgba(187,0,255,0.15);border:1px solid var(--accent-purple);border-radius:20px;padding:4px 12px;font-size:0.85rem;';
+            badge.innerHTML = '<span>' + cat.name + '</span>' +
+                (cat.id !== 'all'
+                    ? '<button onclick="if(window.App) App.handleDeleteCategory(\\\'' + cat.id + '\\\')" style="background:none;border:none;cursor:pointer;color:var(--accent-danger);padding:0;line-height:1;">&#x2715;</button>'
+                    : '');
+            el.appendChild(badge);
+        });
+        if (window.lucide) lucide.createIcons();
+    }
+
+
     async connectPrinter() {
         try {
             if (!navigator.bluetooth) {
@@ -401,11 +823,17 @@ class AppCore {
         if (!step2) return;
 
         document.getElementById('settings-modal').classList.remove('active');
-        this.showToast('⏳ Data reset වෙමින්... කරුණාකර රැඳෙන්න', 'warning');
+        this.showToast('\u23F3 Data reset වෙමින්... කරුණාකර රැඳෙන්න', 'warning');
 
         const RTDB_URL = "https://tradeconnect-1bb92-default-rtdb.asia-southeast1.firebasedatabase.app";
         const CLEAN = {
-            categories: [{ id: 'all', name: 'සියල්ල (All)' }],
+            categories: [
+                { id: 'all', name: 'සියල්ල (All)' },
+                { id: 'mains', name: 'ප්‍රධාන ආහාර (Mains)' },
+                { id: 'drinks', name: 'බීම වර්ග (Drinks)' },
+                { id: 'short_eats', name: 'කෙටි ආහාර (Short Eats)' },
+                { id: 'desserts', name: 'අතුරුපස (Desserts)' }
+            ],
             products: [],
             tables: [
                 { id:'t1', name:'මේසය 1', capacity:2, status:'available' },
@@ -454,7 +882,7 @@ class AppCore {
     renderView() {
         const container = this.elements.viewContainer;
         container.innerHTML = '';
-        requestAnimationFrame(() => lucide.createIcons());
+        requestAnimationFrame(() => { if(window.lucide) lucide.createIcons(); });
 
         if (this.state.currentTab === 'pos') {
             this.elements.cartSidebar.classList.remove('hidden');
@@ -731,7 +1159,7 @@ class AppCore {
             this.elements.checkoutBtn.style.opacity = this.state.cart.length === 0 ? "0.5" : "1";
         }
         
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
 
@@ -1116,7 +1544,7 @@ class AppCore {
         }
 
         container.appendChild(grid);
-        requestAnimationFrame(() => lucide.createIcons());
+        requestAnimationFrame(() => { if(window.lucide) lucide.createIcons(); });
     }
 
 
@@ -1226,7 +1654,7 @@ class AppCore {
 
             grid.appendChild(ticket);
         });
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
     /* --- HELPERS --- */
@@ -1358,18 +1786,22 @@ class AppCore {
 
         const dashContainer = document.createElement('div');
         dashContainer.innerHTML = `
-            <div class="dashboard-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="dashboard-grid" style="grid-template-columns: repeat(4, 1fr);">
                 <div class="glass-card metric-card" style="border-color:var(--accent-cyan);">
-                    <div class="metric-title">මුළු ଆදායම (Revenue)</div>
+                    <div class="metric-title">මුළු ආදායම (Revenue)</div>
                     <div class="metric-value" style="color:var(--accent-cyan);">${currency} ${metrics.revenue.toLocaleString()}</div>
                 </div>
                 <div class="glass-card metric-card" style="border-color:var(--accent-danger);">
-                    <div class="metric-title">මුළු ගනුදෙනු වියදම් (Expenses + COGS)</div>
+                    <div class="metric-title">මුළු වියදම් (Exp + COGS)</div>
                     <div class="metric-value" style="color:var(--accent-danger);">${currency} ${Math.round(metrics.totalExpenses + metrics.cogs).toLocaleString()}</div>
+                </div>
+                <div class="glass-card metric-card" style="border-color:var(--accent-warning);">
+                    <div class="metric-title">අපතේ යාම් පාඩු (Wastage)</div>
+                    <div class="metric-value" style="color:var(--accent-warning);">${currency} ${Math.round(metrics.wastageLoss || 0).toLocaleString()}</div>
                 </div>
                 <div class="glass-card metric-card" style="border-color:var(--accent-success);">
                     <div class="metric-title">ශුද්ධ ලාභය (Net Profit)</div>
-                    <div class="metric-value" style="color:var(--accent-success);">${currency} ${metrics.profit.toLocaleString()}</div>
+                    <div class="metric-value" style="color:var(--accent-success);">${currency} ${(metrics.profit - (metrics.wastageLoss || 0)).toLocaleString()}</div>
                 </div>
             </div>
             
@@ -1700,7 +2132,10 @@ class AppCore {
         header.className = 'view-header';
         header.innerHTML = `
             <h2>ගබඩා කළමනාකරණය (Inventory)</h2>
-            <button class="neon-btn" style="width:auto; margin:0;" id="open-add-inv-btn"><i data-lucide="plus"></i> නව අයිතමයක්</button>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="action-btn" style="border-color:var(--accent-warning); color:var(--accent-warning);" onclick="if(window.App) App.openWastageModal('inventory')"><i data-lucide="alert-triangle"></i> අපතේ යාම්</button>
+                <button class="neon-btn" style="width:auto; margin:0;" id="open-add-inv-btn"><i data-lucide="plus"></i> නව අයිතමයක්</button>
+            </div>
         `;
         container.appendChild(header);
 
@@ -1920,7 +2355,7 @@ class AppCore {
                 </div>
             `;
         });
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
     removeRecipeItemFromUI(idx) {
@@ -1962,7 +2397,10 @@ class AppCore {
         header.className = 'view-header';
         header.innerHTML = `
             <h2>අමුද්‍රව්‍ය (Raw Materials / BOM)</h2>
-            <button class="neon-btn" style="width:auto; margin:0;" onclick="App.openAddRMModal()"><i data-lucide="plus"></i> නව අමුද්‍රව්‍යයක්</button>
+            <div style="display:flex; gap:10px;">
+                <button class="neon-btn" style="width:auto; margin:0; background:var(--accent-warning); color:#000;" onclick="App.openWastageModal('raw_materials')"><i data-lucide="alert-triangle"></i> අපතේ යාම් / ගැලපීම්</button>
+                <button class="neon-btn" style="width:auto; margin:0;" onclick="App.openAddRMModal()"><i data-lucide="plus"></i> නව අමුද්‍රව්‍යයක්</button>
+            </div>
         `;
         container.appendChild(header);
 
@@ -2041,7 +2479,68 @@ class AppCore {
         }
     }
 
-    /* --- SUPPLIERS --- */
+    /* --- WASTAGES --- */
+    openWastageModal(forcedSection) {
+        if (!forcedSection) forcedSection = 'raw_materials';
+        document.getElementById('wastage-form').reset();
+        var secEl = document.getElementById('was-section');
+        if (secEl) secEl.value = forcedSection;
+        this.handleWastageSectionChange();
+        document.getElementById('wastage-modal').classList.add('active');
+    }
+
+    handleWastageSectionChange() {
+        var secEl = document.getElementById('was-section');
+        var section = secEl ? secEl.value : 'raw_materials';
+        var rmSelect = document.getElementById('was-rm');
+        if (!rmSelect) return;
+        rmSelect.innerHTML = '<option value="">-- 񙖳පශඡහන්න --</option>';
+        if (section === 'inventory') {
+            db.getProducts('all').forEach(function(p) {
+                rmSelect.innerHTML += '<option value="'+p.id+'" data-unit="pcs" data-cost="'+(p.costPrice||0)+'" data-stock="'+(p.stock||0)+'">'+p.name+' (񙖳�ය: '+(p.stock||0)+')</option>';
+            });
+        } else {
+            db.getRawMaterials().forEach(function(rm) {
+                rmSelect.innerHTML += '<option value="'+rm.id+'" data-unit="'+rm.unit+'" data-cost="'+(rm.costPerUnit||0)+'" data-stock="'+rm.stock+'">'+rm.name+' (񙖳�ය: '+rm.stock+' '+rm.unit+')</option>';
+            });
+        }
+        this.handleWastageUnit();
+    }
+
+    handleWastageUnit() {
+        var select = document.getElementById('was-rm');
+        if (!select) return;
+        var opt = select.options[select.selectedIndex];
+        var unitEl = document.getElementById('was-unit');
+        if (unitEl) unitEl.value = opt ? (opt.dataset.unit || 'pcs') : '';
+    }
+
+    handleWastageSave() {
+        var rmId    = document.getElementById('was-rm').value;
+        var type    = document.getElementById('was-type').value;
+        var qty     = parseFloat(document.getElementById('was-qty').value);
+        var desc    = document.getElementById('was-desc').value.trim();
+        var secEl   = document.getElementById('was-section');
+        var section = secEl ? secEl.value : 'raw_materials';
+
+        if (!rmId || isNaN(qty) || qty <= 0) return this.showToast('�ුණා�ර සියලු 񙖳රතුරු නිවැරදිව ලබාදෙන්න', 'error');
+
+        var sel   = document.getElementById('was-rm');
+        var opt   = sel.options[sel.selectedIndex];
+        var cost  = parseFloat((opt && opt.dataset.cost) || 0);
+        var stock = parseFloat((opt && opt.dataset.stock) || 0);
+        var name  = opt ? opt.text.split(' (')[0] : rmId;
+
+        if (qty > stock) return this.showToast('񙖳�යත �ති ප්‍රමාණය ��්මවා �ඩු �ළ න�හැ�!', 'error');
+
+        db.saveWastage({ rawMaterialId: rmId, itemType: section, type: type, qty: qty, cost: cost, desc: desc, timestamp: new Date().toISOString() });
+        db.logAction('Wastage', name + ' from ' + qty + ' removed. (' + type + ') - ' + desc);
+        this.showToast('񙖳�ය සාර්ත�ව �ඩු �රන ලදි!', 'success');
+        document.getElementById('wastage-modal').classList.remove('active');
+        this.renderView();
+    }
+
+        /* --- SUPPLIERS --- */
     renderSuppliers(container) {
         const header = document.createElement('div');
         header.className = 'view-header';
@@ -2200,7 +2699,7 @@ class AppCore {
             });
             this.showToast(`ප්‍රින්ටරය සම්බන්ධ වුණා: ${device.name}`, 'success');
             document.getElementById('connect-bt-printer').innerHTML = '<i data-lucide="check"></i> සම්බන්ධ කර ඇත';
-            lucide.createIcons();
+            if(window.lucide) lucide.createIcons();
         } catch (error) {
             console.error(error);
             this.showToast('ප්‍රින්ටරය සම්බන්ධ කිරීම අසාර්ථකයි.', 'error');
@@ -2215,7 +2714,7 @@ class AppCore {
             const device = await navigator.usb.requestDevice({ filters: [{}] }); 
             this.showToast(`ස්කෑනරය සම්බන්ධ වුණා: ${device.productName}`, 'success');
             document.getElementById('connect-scanner').innerHTML = '<i data-lucide="check"></i> සම්බන්ධ කර ඇත';
-            lucide.createIcons();
+            if(window.lucide) lucide.createIcons();
         } catch (error) {
             console.error(error);
             this.showToast('ස්කෑනරය සම්බන්ධ කිරීම අසාර්ථකයි.', 'error');
@@ -2356,7 +2855,7 @@ class AppCore {
                 ? `<div style="text-align:center; color:var(--text-secondary); padding:2rem; font-size:0.85rem;">මෙම ගනුදෙනුකරු සඳහා ණය නොමැත.</div>`
                 : loans.map(l => this._renderLoanCard(l, cur)).join('')
             }`;
-        lucide.createIcons();
+        if(window.lucide) lucide.createIcons();
     }
 
     _renderLoanCard(loan, cur) {
@@ -2673,7 +3172,7 @@ class AppCore {
             });
         }
         container.appendChild(grid);
-        requestAnimationFrame(() => lucide.createIcons());
+        requestAnimationFrame(() => { if(window.lucide) lucide.createIcons(); });
     }
 
     openAddCateringModal() {
@@ -2771,13 +3270,22 @@ class AppCore {
 // Attach globally
 window.App = null;
 document.addEventListener('DOMContentLoaded', async () => {
-    // Wait for initial Firebase Sync
-    await db.init();
+    try {
+        // Wait for initial Firebase Sync
+        await db.init();
+    } catch(e) {
+        console.error("Firebase init failed completely:", e);
+    }
     
-    const loader = document.getElementById('loader');
-    if (loader) loader.style.display = 'none';
-
-    window.App = new AppCore();
+    try {
+        const loader = document.getElementById('loader');
+        if (loader) loader.style.display = 'none';
+        
+        window.App = new AppCore();
+    } catch(e) {
+        console.error("AppCore initialization failed:", e);
+        document.body.innerHTML += '<div style="position:fixed;top:50px;left:0;right:0;background:red;color:white;z-index:99999;padding:20px;font-size:20px;">App Error: ' + e.message + '</div>';
+    }
 
     setInterval(() => {
         if(navigator.onLine) {
@@ -2785,3 +3293,4 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }, 10000);
 });
+
