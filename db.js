@@ -42,8 +42,20 @@ const INITIAL_DATA = {
 
 class Database {
     constructor() {
-        this.data = JSON.parse(localStorage.getItem('ju_pos_data')) || Object.assign({}, INITIAL_DATA);
+        this.data = JSON.parse(localStorage.getItem('ju_pos_data')) || JSON.parse(JSON.stringify(INITIAL_DATA));
         
+        // --- Migration for old category names to match correctly ---
+        let migrated = false;
+        if (this.data.products && Array.isArray(this.data.products)) {
+            this.data.products.forEach(p => {
+                if (p.category === 'starters') { p.category = 'short_eats'; migrated = true; }
+                if (p.category === 'beverages') { p.category = 'drinks'; migrated = true; }
+            });
+        }
+        if (migrated) {
+            localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
+        }
+
         // Auto-restore default tables if empty
         if (!this.data.tables || this.data.tables.length === 0) {
             this.data.tables = [...DEFAULT_TABLES];
@@ -119,6 +131,7 @@ class Database {
                 this.localWastages = Object.values(cloudData.wastages);
 
                 this.data = cloudData;
+                this._applyMigrations();
                 localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
             }
             // Flush any pending offline writes now that we're online
@@ -218,13 +231,30 @@ class Database {
                 if (cloudData.products && cloudData.products.length > 0) this.data.products = cloudData.products;
                 if (cloudData.categories && cloudData.categories.length > 0) this.data.categories = cloudData.categories;
 
+                this._applyMigrations();
+                
                 localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
                 if (window.App && typeof window.App.renderView === 'function') {
                     window.App.renderView();
                 }
             }
+
         } catch(e) {
-            // offline � silent fail
+            // offline silent fail
+        }
+    }
+
+    _applyMigrations() {
+        let migrated = false;
+        if (this.data.products && Array.isArray(this.data.products)) {
+            this.data.products.forEach(p => {
+                if (p.category === 'starters') { p.category = 'short_eats'; migrated = true; }
+                if (p.category === 'beverages') { p.category = 'drinks'; migrated = true; }
+            });
+        }
+        if (migrated) {
+            localStorage.setItem('ju_pos_data', JSON.stringify(this.data));
+            this.pushToCloud('products', this.data.products);
         }
     }
 
