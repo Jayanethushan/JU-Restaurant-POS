@@ -503,6 +503,57 @@ class AppCore {
         if (ok) this.showToast('Test print \u0dc3\u0dcf\u0dbb\u0dca\u0dad\u0d9a\u0dc0\u0dba\u0dd2!', 'success');
     }
 
+    async printReceiptESC(order) {
+        if (!this._hw.printer.device) return this.showToast('Printer is not connected!', 'error');
+        const currency = this.getCurrency();
+        let displayType = order.type.toUpperCase();
+        if(order.type === 'dine-in') displayType = "Dine-In";
+        else if (order.type === 'takeaway') displayType = "Takeaway";
+        else if (order.type === 'delivery') displayType = "Delivery";
+        else if (order.type === 'credit') displayType = "Credit";
+
+        let lines = [
+            'Sobamin Hotel',
+            'No 45, Main Road, Kurunegala',
+            'Tel: 037-1234567 | Reg: 12345',
+            '---',
+            'Date: ' + new Date(order.timestamp).toLocaleString('en-US'),
+            'Order #: ' + order.id,
+            'Type: ' + displayType,
+        ];
+        
+        if (order.type === 'dine-in' && order.tableId) {
+            const t = db.getTables().find(tb => tb.id === order.tableId);
+            lines.push('Table: ' + (t ? t.name : order.tableId));
+        }
+        lines.push('---');
+        
+        order.items.forEach(i => {
+            const p = i.price * i.qty;
+            let n = i.name;
+            if(i.modifiers) n += ` (${i.modifiers})`;
+            // Remove emojis as ESC/POS won't print them correctly
+            n = n.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+            lines.push(`${i.qty}x ${n}`);
+            lines.push(`    ${currency} ${p.toFixed(2)}`);
+        });
+
+        lines.push('---');
+        lines.push(`Subtotal: ${currency} ${order.subtotal.toFixed(2)}`);
+        if (order.serviceCharge > 0) lines.push(`Service Charge: ${currency} ${order.serviceCharge.toFixed(2)}`);
+        lines.push(`Tax: ${currency} ${order.tax.toFixed(2)}`);
+        if (order.discount > 0) lines.push(`Discount: -${currency} ${order.discount.toFixed(2)}`);
+        lines.push(`TOTAL: ${currency} ${order.total.toFixed(2)}`);
+        lines.push('---');
+        lines.push('Thank you! Come again!');
+        lines.push(' ');
+        lines.push(' ');
+
+        const bytes = this._escposBytes(lines);
+        const ok = await this._sendToPrinter(bytes);
+        if (ok) this.showToast('Bill is printing!', 'success');
+    }
+
     /* --- BARCODE SCANNER --- */
     async connectScanner(mode) {
         if (mode === 'bluetooth') {
@@ -1403,8 +1454,19 @@ class AppCore {
         const rModal = document.getElementById('receipt-modal');
         rModal.classList.add('active');
 
-        document.getElementById('btn-print').onclick = () => window.print();
+        document.getElementById('btn-print').onclick = () => {
+            if (this._hw.printer && this._hw.printer.device) {
+                this.printReceiptESC(order);
+            } else {
+                window.print();
+            }
+        };
         document.getElementById('btn-close-receipt').onclick = () => rModal.classList.remove('active');
+        
+        // Auto-print if hardware printer is connected
+        if (this._hw.printer && this._hw.printer.device) {
+            this.printReceiptESC(order);
+        }
     }
 
     /* --- TABLE MANAGEMENT --- */
