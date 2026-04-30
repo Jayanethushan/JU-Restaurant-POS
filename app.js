@@ -2241,6 +2241,7 @@ class AppCore {
                     <td style="${sClass}">${p.stock !== undefined ? p.stock : 'සීමාවක් නැත'}</td>
                     <td>
                         <div style="display:flex; gap:0.5rem;">
+                            <button class="action-btn" style="border-color:var(--accent-success); color:var(--accent-success);" title="තොග එකතු කරන්න (Stock IN)" onclick="App.openStockInModal('${p.id}')"><i data-lucide="package-plus" style="width:16px;"></i></button>
                             <button class="action-btn" title="වෙනස් කරන්න" onclick="App.editProduct('${p.id}')"><i data-lucide="edit" style="width:16px;"></i></button>
                             <button class="action-btn danger" title="මකා දමන්න" onclick="App.deleteProduct('${p.id}')"><i data-lucide="trash-2" style="width:16px;"></i></button>
                         </div>
@@ -2314,6 +2315,136 @@ class AppCore {
         }
         
         document.getElementById('inventory-modal').classList.remove('active');
+        this.renderView();
+    }
+
+    /* --- STOCK IN (Quick Add & BOM Deduction) --- */
+    openStockInModal(id) {
+        const product = db.getProducts('all').find(p => p.id === id);
+        if(!product) return;
+
+        document.getElementById('stockin-prod-id').value = product.id;
+        document.getElementById('stockin-prod-name').textContent = product.name;
+        document.getElementById('stockin-current-stock').textContent = product.stock !== undefined ? product.stock : 0;
+        
+        const recipeInfo = document.getElementById('stockin-recipe-info');
+        if (product.recipe && product.recipe.length > 0) {
+            recipeInfo.textContent = `⚠️ මෙම අයිතමය සෑදීමට අමුද්‍රව්‍ය (Recipe) අඩංගු වේ. තොග එකතු කිරීමේදී අමුද්‍රව්‍ය තොගයෙන් ස්වයංක්‍රීයව අඩුවේ.`;
+            recipeInfo.style.color = 'var(--accent-warning)';
+        } else {
+            recipeInfo.textContent = `ℹ️ මෙයට අමුද්‍රව්‍ය වට්ටෝරුවක් නැත. නිෂ්පාදනයේ තොගය පමණක් වැඩිවේ.`;
+            recipeInfo.style.color = 'var(--text-secondary)';
+        }
+
+        document.getElementById('stockin-qty').value = '';
+        document.getElementById('stockin-preview-box').style.display = 'none';
+        
+        document.getElementById('stock-in-modal').classList.add('active');
+    }
+
+    previewStockIn() {
+        const id = document.getElementById('stockin-prod-id').value;
+        const qty = parseInt(document.getElementById('stockin-qty').value);
+        const product = db.getProducts('all').find(p => p.id === id);
+        
+        const previewBox = document.getElementById('stockin-preview-box');
+        const previewItems = document.getElementById('stockin-preview-items');
+        const newCostSpan = document.getElementById('stockin-new-cost');
+        
+        if (!product || isNaN(qty) || qty <= 0 || !product.recipe || product.recipe.length === 0) {
+            previewBox.style.display = 'none';
+            return;
+        }
+
+        let previewHTML = '';
+        let totalNewCost = 0;
+        const rms = db.getRawMaterials();
+
+        product.recipe.forEach(ri => {
+            const rm = rms.find(r => r.id === ri.rawMaterialId);
+            if (rm) {
+                const reqQty = ri.qty * qty;
+                const costForThis = reqQty * (rm.costPerUnit || 0);
+                totalNewCost += costForThis;
+                
+                const isShort = rm.stock < reqQty;
+                const stockColor = isShort ? 'var(--accent-danger)' : 'var(--text-primary)';
+                
+                previewHTML += `
+                    <div style="display:flex; justify-content:space-between; margin-bottom:3px;">
+                        <span>${rm.name}</span>
+                        <span>
+                            <strong style="color:var(--accent-cyan)">${reqQty.toFixed(2)} ${rm.unit}</strong> 
+                            (දැනට: <span style="color:${stockColor}">${(rm.stock || 0).toFixed(2)}</span>)
+                        </span>
+                    </div>
+                `;
+            }
+        });
+
+        // The cost is per 1 unit of product
+        const costPerItem = qty > 0 ? (totalNewCost / qty) : 0;
+        
+        previewItems.innerHTML = previewHTML;
+        newCostSpan.textContent = `${this.getCurrency()} ${costPerItem.toFixed(2)}`;
+        previewBox.style.display = 'block';
+    }
+
+    handleStockInSubmit() {
+        const id = document.getElementById('stockin-prod-id').value;
+        const qty = parseInt(document.getElementById('stockin-qty').value);
+        const product = db.getProducts('all').find(p => p.id === id);
+
+        if (!product || isNaN(qty) || qty <= 0) return this.showToast('කරුණාකර නිවැරදි ප්‍රමාණයක් ඇතුලත් කරන්න', 'error');
+
+        // Check RM limits and calculate new cost
+        let totalCostForBatch = 0;
+        const rms = db.getRawMaterials();
+        let shortRM = [];
+
+        if (product.recipe && product.recipe.length > 0) {
+            product.recipe.forEach(ri => {
+                const rm = rms.find(r => r.id === ri.rawMaterialId);
+                if (rm) {
+                    const reqQty = ri.qty * qty;
+                    if ((rm.stock || 0) < reqQty) {
+                        shortRM.push(`${rm.name} (අවශ්‍ය: ${reqQty}${rm.unit}, ඇති: ${rm.stock}${rm.unit})`);
+                    }
+                    totalCostForBatch += reqQty * (rm.costPerUnit || 0);
+                }
+            });
+
+            if (shortRM.length > 0) {
+                return this.showToast(`අමුද්‍රව්‍ය ප්‍රමාණවත් නැත: \n${shortRM.join('\n')}`, 'error');
+            }
+
+            // Deduct RM
+            product.recipe.forEach(ri => {
+                const rm = rms.find(r => r.id === ri.rawMaterialId);
+                if (rm) {
+                    const reqQty = ri.qty * qty;
+                    db.saveWastage({
+                        type: 'processing',
+                        itemType: 'raw_materials',
+                        rawMaterialId: rm.id,
+                        qty: reqQty,
+                        cost: rm.costPerUnit || 0,
+                        desc: `${product.name} තොග (${qty}) එකතු කිරීම සඳහා`,
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            });
+
+            // Update product Cost Price based on CURRENT rm costs
+            product.costPrice = totalCostForBatch / qty;
+        }
+
+        // Increase product stock
+        product.stock = (product.stock || 0) + qty;
+        db.updateProduct(product.id, { stock: product.stock, costPrice: product.costPrice });
+
+        this.showToast(`${product.name} සඳහා තොග ${qty} ක් එකතු කරන ලදී!`, 'success');
+        document.getElementById('stock-in-modal').classList.remove('active');
         this.renderView();
     }
 

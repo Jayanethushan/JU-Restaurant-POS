@@ -266,6 +266,41 @@
         </div>
     </div>
 
+    <!-- Stock IN (Quick Add) Modal -->
+    <div class="modal-overlay" id="stock-in-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>තොග එකතු කිරීම (Stock IN)</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="stockin-prod-id">
+                <div class="glass-card" style="padding:15px; margin-bottom:15px; background:rgba(0,0,0,0.3);">
+                    <h4 id="stockin-prod-name" style="color:var(--accent-cyan); margin-bottom:5px;"></h4>
+                    <p style="font-size:0.9rem; color:var(--text-secondary);">දැනට ඇති තොගය: <span id="stockin-current-stock" style="color:var(--text-primary); font-weight:bold;">0</span></p>
+                    <p id="stockin-recipe-info" style="font-size:0.85rem; color:var(--accent-warning); margin-top:5px;"></p>
+                </div>
+                
+                <form id="stockin-form" onsubmit="event.preventDefault(); if(window.App) App.handleStockInSubmit();">
+                    <div class="form-group">
+                        <label>අලුතින් එකතු කරන ප්‍රමාණය (New Quantity) *</label>
+                        <input type="number" id="stockin-qty" required min="1" step="1" placeholder="උදා: 10" oninput="if(window.App) App.previewStockIn()">
+                    </div>
+                    
+                    <div id="stockin-preview-box" class="glass-card" style="padding:10px; display:none; border-color:var(--accent-success); margin-top:10px;">
+                        <p style="font-size:0.85rem; margin-bottom:5px; font-weight:bold; color:var(--accent-success);">අඩු වන අමුද්‍රව්‍ය (Raw Materials to Deduct):</p>
+                        <div id="stockin-preview-items" style="font-size:0.8rem; color:var(--text-secondary); max-height:100px; overflow-y:auto;"></div>
+                        <p style="margin-top:8px; font-weight:bold; color:var(--text-primary); font-size:0.9rem; border-top:1px solid var(--border-glass); padding-top:5px;">නව ඒකකයක මිල (New Cost): <span id="stockin-new-cost" style="color:var(--accent-cyan);"></span></p>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="action-btn close-modal-btn">අවලංගු කරන්න</button>
+                <button type="button" class="neon-btn" style="margin-top:0;" onclick="if(window.App) App.handleStockInSubmit()">තොග එකතු කරන්න</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Inventory CRUD Modal -->
     <div class="modal-overlay" id="inventory-modal">
         <div class="modal-content lg">
